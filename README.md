@@ -4,6 +4,15 @@
 
 项目仓库：[isYaoNoistu/codex-ssh-control](https://github.com/isYaoNoistu/codex-ssh-control)。插件 ID 与仓库提供的本地 marketplace 名称均为 `codex-ssh-control`，安装引用为 `codex-ssh-control@codex-ssh-control`。目前通过仓库安装，尚未收录到公共 marketplace。
 
+## 0.4.0 远程执行基础设施
+
+- **连接**：可视化 ProxyJump 链路、逐跳固定公钥与 SHA256 确认、保活和连接超时、POSIX 连接复用，以及明确受信任的本机 SSH config 模式。
+- **长任务**：提交返回任务 ID；持久状态、增量输出、断线核实、幂等提交、任务停止和资源限制。后台任务默认关闭，需要单独启用并原生批准。
+- **制品传输**：两端目录权限、二进制流、断点续传、前缀与完整 SHA256、原子发布到新路径、进度和临时文件清理；目录按清单逐项审批。
+- **权限**：精确/递归目录、受管动作目标名称白名单、审批快照、跨进程并发额度，以及撤销后阻止新传输分块和最终提交。
+
+这些配置仍在原有主机详情中完成；执行历史可切换可恢复任务与制品传输。默认不开启新权限，升级保留已有主机和策略。Windows 原生 OpenSSH 不支持连接复用；当前制品通道是受管 SSH 流，尚不提供 SFTP/SCP 协议、覆盖已有制品、PTY、密码存储或密钥轮换。完整行为及限制见 [基础设施契约](docs/infrastructure-contract.md)。
+
 ## 权限治理
 
 默认使用受限模式：**非敏感状态查询自动执行；文件修改、启动、停止、重启和删除必须申请；密钥和安全配置禁止访问。**
@@ -109,7 +118,7 @@ $PLUGIN_PATH = (Get-Location).Path
 
 ### SSH 登录准备
 
-连接始终使用 `BatchMode=yes`、`StrictHostKeyChecking=yes`、`UserKnownHostsFile=~/.ssh/known_hosts`。插件覆盖 SSH config 的自定义 known-hosts 位置，但不修改 SSH config。首次使用须由用户在终端核验服务器指纹后建立信任：
+连接始终使用非交互认证与严格主机公钥校验。受管模式在侧栏为目标及每一跳核对并固定公钥，使用独立 known_hosts。兼容/原生别名模式继续使用 `UserKnownHostsFile=~/.ssh/known_hosts`，覆盖 SSH config 的自定义 known-hosts 位置，但不修改用户 SSH config；首次使用须由用户在终端核验服务器指纹后建立信任：
 
 ```powershell
 ssh -o StrictHostKeyChecking=ask -o UserKnownHostsFile=~/.ssh/known_hosts -i KEY user@HOST

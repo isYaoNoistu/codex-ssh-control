@@ -1,0 +1,46 @@
+name: Infrastructure tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  node:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test test/*.test.mjs
+  linux-helpers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s test -p '*_test.py'
+  real-ssh:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [debian, ubuntu, alpine, rocky, openeuler]
+    env:
+      SSH_FIXTURE_DISTRO: ${{ matrix.distro }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test test/integration/ssh.test.mjs
+      - run: node --test test/integration/runtime.test.mjs
+        env:
+          SSH_INTEGRATION: '1'
+      - run: node --test test/transfer-ssh.integration.mjs
+        if: matrix.distro == 'debian'
+        env:
+          SSH_TRANSFER_INTEGRATION: '1'

@@ -2,6 +2,8 @@
 
 Node >=24; stdio JSON-RPC MCP; native OpenSSH; SQLite shared across MCP processes and hook. No npm runtime dependencies. Permission semantics are specified in [docs/governance-contract.md](docs/governance-contract.md); native confirmation, presentation and history in [docs/interaction-history-contract.md](docs/interaction-history-contract.md).
 
+Version 0.4.0 adds managed transport, durable tasks and governed artifact streams. Their authoritative fields, lifecycle and limitations are in [docs/infrastructure-contract.md](docs/infrastructure-contract.md). Schema5 extends existing state without enabling new permissions. Additional tools: `ssh_capabilities`, `ssh_job_submit/read/list/reconcile/cancel`, `ssh_transfer_prepare/start/read/list/resume/cancel/cleanup/manifest/mkdir`; host-key scan and confirmation are app-only. Background job observation uncertainty does not release execution concurrency. Transfer resume consumes a new exact approval while renewing the original slot. Neither connection loss nor an unknown result authorizes replay.
+
 ## Package identity and compatibility
 
 Project, plugin and MCP server name: `codex-ssh-control`. The bundled local marketplace uses the same name; install reference: `codex-ssh-control@codex-ssh-control`. Existing installations must disable `ssh-control@ssh-control-local` before enabling the renamed package, so only one plugin registers its hook and tools.

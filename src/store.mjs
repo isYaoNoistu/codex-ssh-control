@@ -7,9 +7,11 @@ import { randomUUID, createHash } from 'node:crypto';
 import { DEFAULT_POLICY, validatePolicy, normalizeOperation, evaluateOperation } from './policy.mjs';
 import { operationPresentation, historySnapshot, sanitizeHistoryOutput } from './operation-display.mjs';
 import { normalizeHostOperation } from './host-operation.mjs';
+import { normalizeConnection } from './transport.mjs';
 
-const fields = ['id', 'name', 'hostname', 'port', 'username', 'identityFile', 'sshAlias', 'defaultCwd', 'enabled'];
-const connectionFields = ['hostname', 'port', 'username', 'identityFile', 'sshAlias', 'defaultCwd'];
+const fields = ['id', 'name', 'hostname', 'port', 'username', 'identityFile', 'sshAlias', 'defaultCwd', 'enabled', 'connection'];
+const connectionFields = ['hostname', 'port', 'username', 'identityFile', 'sshAlias', 'defaultCwd', 'connection'];
+const countsConcurrency=operation=>!['job_control','transfer_control'].includes(operation.kind);
 
 function text(value, label, max = 4096) {
   if (typeof value !== 'string' || value.length > max || /[\0\r\n]/u.test(value)) {
@@ -71,6 +73,11 @@ function validateHost(input, previous) {
   }
   if (host.username && !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,63}$/u.test(host.username)) throw new Error('SSH 用户名格式无效');
   if (host.sshAlias && !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,252}$/u.test(host.sshAlias)) throw new Error('SSH 别名格式无效');
+  if(Object.hasOwn(host,'connection')) {
+    host.connection=normalizeConnection(host.connection);
+    if(host.connection?.mode==='managed'&&host.sshAlias)throw new Error('受管连接必须填写明确地址；SSH别名使用可信本地配置模式');
+    if(host.connection?.mode==='native'&&!host.sshAlias)throw new Error('可信本地配置模式需要SSH别名');
+  }
   return host;
 }
 
@@ -121,7 +128,7 @@ export class Store {
 
   #migrate() {
     const version = this.#db.prepare('PRAGMA user_version').get().user_version;
-    if (version > 4) throw new Error('数据版本高于当前插件支持范围，请使用更新版本');
+    if (version > 5) throw new Error('数据版本高于当前插件支持范围，请使用更新版本');
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, value TEXT NOT NULL, revision TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS grants (
@@ -187,6 +194,11 @@ export class Store {
     // NULL marks pre-upgrade intents: their ordering against revocations is unknowable.
     if (!intentColumns.has('revocation_revision')) this.#db.exec('ALTER TABLE intents ADD COLUMN revocation_revision INTEGER');
     const approvalColumns = new Set(this.#db.prepare('PRAGMA table_info(approvals)').all().map(row => row.name));
+    const operationColumns=new Set(this.#db.prepare('PRAGMA table_info(operations)').all().map(row=>row.name));
+    for(const [name,type] of Object.entries({durable:'INTEGER NOT NULL DEFAULT 0',counts_concurrency:'INTEGER NOT NULL DEFAULT 1',external_kind:'TEXT',external_id:'TEXT',grant_id:'TEXT',host_revision:'TEXT'})) {
+      if(!operationColumns.has(name))this.#db.exec(`ALTER TABLE operations ADD COLUMN ${name} ${type}`);
+    }
+    this.#db.exec('CREATE INDEX IF NOT EXISTS operations_external ON operations(external_kind,external_id)');
     for (const [name, type] of Object.entries({ source: "TEXT NOT NULL DEFAULT 'legacy'", prompt_token_hash: 'TEXT', explanation: 'TEXT', presentation: 'TEXT', host_snapshot: 'TEXT', policy_snapshot: 'TEXT' })) {
       if (!approvalColumns.has(name)) this.#db.exec(`ALTER TABLE approvals ADD COLUMN ${name} ${type}`);
     }
@@ -206,7 +218,8 @@ export class Store {
     }
     this.#scrubNative();
     if (version < 4) this.#audit({ event: 'intent_revocations_migrated', summary: '快捷授权撤销隔离迁移', result: 'completed', reason: '升级前未消费的快捷授权请求已失效；保留现有主机、策略和有效授权' });
-    this.#db.exec('PRAGMA user_version = 4');
+    if(version<5)this.#audit({event:'infrastructure_migrated',summary:'任务与传输权限迁移',result:'completed',reason:'保留现有配置；后台任务和制品传输默认关闭'});
+    this.#db.exec('PRAGMA user_version = 5');
   }
 
   close() {
@@ -233,7 +246,7 @@ export class Store {
   #policy(id) {
     const row = this.#db.prepare('SELECT revision,value FROM policies WHERE host_id=?').get(id);
     if (!row) throw new Error(`主机不存在：${id}`);
-    return { hostId: id, revision: row.revision, policy: JSON.parse(row.value) };
+    return { hostId: id, revision: row.revision, policy: validatePolicy(JSON.parse(row.value)) };
   }
 
   #audit({ threadId = null, hostId: id = null, event, operationId = null, summary, result, reason = '', policyRevision = null }) {
@@ -267,7 +280,9 @@ export class Store {
       this.#scrubNative(row.id);
       this.#audit({ threadId: row.thread_id, hostId: row.host_id, event: 'approval_expired', summary: row.summary, result: 'expired', reason: '操作审批已过期', policyRevision: row.policy_revision });
     }
-    const operations = this.#db.prepare("SELECT * FROM operations WHERE status='active' AND expires_at<=?").all(now);
+    this.#db.prepare("UPDATE execution_history SET status='unknown',output_notice=? WHERE status='running' AND operation_id IN (SELECT id FROM operations WHERE status='active' AND durable=1 AND expires_at<=?)")
+      .run('任务期限已到，仍需核实远端结果；保留并发占位。',now);
+    const operations = this.#db.prepare("SELECT * FROM operations WHERE status='active' AND durable=0 AND expires_at<=?").all(now);
     for (const row of operations) {
       this.#db.prepare("UPDATE operations SET status='timed_out' WHERE id=?").run(row.id);
       this.#db.prepare("UPDATE execution_history SET status='unknown',finished_at=?,output_notice=? WHERE operation_id=? AND status='running'")
@@ -277,8 +292,9 @@ export class Store {
   }
 
   #pruneHistory(now = Date.now()) {
-    this.#db.prepare("DELETE FROM execution_history WHERE status!='running' AND finished_at<=?").run(now - 30 * 24 * 60 * 60_000);
-    this.#db.exec("DELETE FROM execution_history WHERE status!='running' AND id IN (SELECT id FROM execution_history WHERE status!='running' ORDER BY id DESC LIMIT -1 OFFSET 500)");
+    const ended="status!='running' AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.id=execution_history.operation_id AND o.status='active')";
+    this.#db.prepare(`DELETE FROM execution_history WHERE ${ended} AND finished_at<=?`).run(now - 30 * 24 * 60 * 60_000);
+    this.#db.exec(`DELETE FROM execution_history WHERE ${ended} AND id IN (SELECT id FROM execution_history WHERE ${ended} ORDER BY id DESC LIMIT -1 OFFSET 500)`);
   }
 
   listHosts() { return this.#transaction(() => this.#hosts(), false); }
@@ -287,7 +303,7 @@ export class Store {
     return this.#transaction(() => {
       const previous = this.#host(hostId(input?.id));
       const host = validateHost(input, previous);
-      const changed = !previous || connectionFields.some(key => previous[key] !== host[key]) || previous.enabled !== host.enabled;
+      const changed = !previous || connectionFields.some(key => JSON.stringify(canonical(previous[key])) !== JSON.stringify(canonical(host[key]))) || previous.enabled !== host.enabled;
       const revision = changed ? randomUUID() : this.#row(host.id).revision;
       this.#db.prepare('INSERT INTO hosts(id,value,revision) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value,revision=excluded.revision')
         .run(host.id, JSON.stringify(host), revision);
@@ -497,8 +513,8 @@ export class Store {
   }
 
   #nativePermit(threadId, id, hostRow, record, evaluation, presentation, digest, approvalId, now) {
-    const active = this.#db.prepare("SELECT COUNT(*) AS n FROM operations WHERE host_id=? AND status='active' AND expires_at>?").get(id, now).n;
-    if (active >= record.policy.maxConcurrent) {
+    const active = this.#db.prepare("SELECT COUNT(*) AS n FROM operations WHERE host_id=? AND status='active' AND counts_concurrency=1 AND (durable=1 OR expires_at>?)").get(id, now).n;
+    if (countsConcurrency(evaluation.operation) && active >= record.policy.maxConcurrent) {
       if (approvalId) {
         this.#db.prepare("UPDATE approvals SET status='invalidated' WHERE id=? AND status='pending'").run(approvalId);
         this.#scrubNative(approvalId);
@@ -516,6 +532,8 @@ export class Store {
     }
     this.#db.prepare(`INSERT INTO operations(id,thread_id,host_id,policy_revision,request_hash,summary,status,created_at,expires_at)
       VALUES(?,?,?,?,?,?,'active',?,?)`).run(operationId, threadId, id, record.revision, digest, summary, now, now + (record.policy.timeoutSeconds + 30) * 1000);
+    const grant=this.#activeGrant(threadId,id,now);
+    this.#db.prepare('UPDATE operations SET counts_concurrency=?,grant_id=?,host_revision=? WHERE id=?').run(Number(countsConcurrency(evaluation.operation)),grant?.grant_id??null,hostRow.revision,operationId);
     this.#db.prepare(`INSERT INTO execution_history(operation_id,thread_id,host_id,policy_revision,snapshot,summary,explanation,status,started_at)
       VALUES(?,?,?,?,?,?,?,'running',?)`).run(operationId, threadId, id, record.revision, JSON.stringify(snapshot), snapshot.summary, snapshot.explanation, now);
     this.#audit({ threadId, hostId: id, operationId, event: 'operation_started', summary, result: 'ready', reason: approvalId ? '已原子消费本次原生确认' : '策略允许自动执行', policyRevision: record.revision });
@@ -524,19 +542,79 @@ export class Store {
   }
 
   assertOperationReady(threadId, operationId) {
+    return this.#transaction(() => { this.#readyOperation(threadId, operationId); }, false);
+  }
+
+  #readyOperation(threadId, operationId, now = Date.now()) {
     const invalid = () => Object.assign(new Error('执行许可已过期或因主机、授权、权限策略变更而失效；本次操作未执行。'), { code: 'OPERATION_INVALIDATED' });
     try { identity(threadId, '聊天标识'); identity(operationId, '操作标识'); }
     catch { throw invalid(); }
-    return this.#transaction(() => {
-      const now = Date.now();
-      const operation = this.#db.prepare('SELECT * FROM operations WHERE id=?').get(operationId);
-      if (!operation || operation.thread_id !== threadId || operation.status !== 'active'
-          || operation.expires_at <= now || operation.authorization_invalidated !== 0) throw invalid();
-      const grant = this.#activeGrant(threadId, operation.host_id, now);
-      if (!grant || grant.policy_revision !== operation.policy_revision) throw invalid();
-      // Read-only final check. The caller records cancellation on failure, then
-      // starts the runner synchronously without another await after success.
-    }, false);
+    const operation = this.#db.prepare('SELECT * FROM operations WHERE id=?').get(operationId);
+    if (!operation || operation.thread_id !== threadId || operation.status !== 'active'
+        || operation.expires_at <= now || operation.authorization_invalidated !== 0) throw invalid();
+    const grant = this.#activeGrant(threadId, operation.host_id, now);
+    if (!grant || grant.policy_revision !== operation.policy_revision || (operation.grant_id&&operation.grant_id!==grant.grant_id) || (operation.host_revision&&operation.host_revision!==grant.host_revision)) throw invalid();
+    // The caller starts the runner synchronously after this final read-only check.
+    return operation;
+  }
+  trackExternalOperation(threadId,operationId,kind,externalId,{deadline}={}) {
+    if(!['job','transfer'].includes(kind))throw new Error('外部任务类型无效');
+    identity(externalId,'外部任务标识');
+    return this.#transaction(()=>{
+      const row=this.#readyOperation(threadId,operationId);
+      if(row.external_id&&(row.external_id!==externalId||row.external_kind!==kind))throw new Error('执行许可已绑定其他任务');
+      const previous=this.#db.prepare('SELECT thread_id,host_id FROM operations WHERE external_kind=? AND external_id=? LIMIT 1').get(kind,externalId);
+      if(previous&&(previous.thread_id!==threadId||previous.host_id!==row.host_id))throw new Error('任务归属不一致');
+      const expiresAt=deadline??row.expires_at;
+      if(!Number.isSafeInteger(expiresAt)||expiresAt<=Date.now()||expiresAt>Date.now()+86430_000)throw new Error('任务期限无效');
+      this.#db.prepare('UPDATE operations SET durable=1,external_kind=?,external_id=?,expires_at=? WHERE id=?').run(kind,externalId,expiresAt,operationId);
+      return operationId;
+    });
+  }
+  getExternalOperation(threadId,kind,externalId) {
+    identity(threadId,'聊天标识');identity(externalId,'任务标识');
+    return this.#transaction(()=>{
+      const row=this.#db.prepare('SELECT * FROM operations WHERE external_kind=? AND external_id=? ORDER BY rowid DESC LIMIT 1').get(kind,externalId);
+      if(!row)return null;
+      if(row.thread_id!==threadId)throw new Error('任务不属于当前聊天');
+      return {id:row.id,threadId:row.thread_id,hostId:row.host_id,kind,externalId,status:row.status,expiresAt:row.expires_at,policyRevision:row.policy_revision,authorizationInvalidated:Boolean(row.authorization_invalidated)};
+    },false);
+  }
+  renewExternalOperation(threadId,newPermitOperationId,kind,externalId,{deadline}={}) {
+    identity(threadId,'聊天标识');identity(newPermitOperationId,'续传许可标识');identity(externalId,'传输标识');
+    if(kind!=='transfer')throw new Error('仅文件传输可续期');
+    return this.#transaction(()=>{
+      const now=Date.now(),permit=this.#readyOperation(threadId,newPermitOperationId,now);
+      const rows=this.#db.prepare('SELECT * FROM operations WHERE external_kind=? AND external_id=?').all(kind,externalId);
+      if(rows.length!==1)throw new Error('传输许可不存在或绑定不唯一');
+      const original=rows[0];
+      if(original.thread_id!==threadId||original.host_id!==permit.host_id||original.host_revision!==permit.host_revision
+          ||original.status!=='active'||original.durable!==1||original.counts_concurrency!==1)throw new Error('原传输已结束或归属、连接配置不一致');
+      if(permit.id===original.id||permit.external_id!==null||permit.counts_concurrency!==0)throw new Error('本次续传许可已消费或类型不符');
+      const readSnapshot=id=>{
+        const row=this.#db.prepare('SELECT snapshot FROM execution_history WHERE operation_id=?').get(id);
+        if(!row)throw new Error('缺少精确审批记录，不能恢复传输');
+        return JSON.parse(row.snapshot).operationSnapshot;
+      };
+      const control=readSnapshot(permit.id),initial=readSnapshot(original.id);
+      if(control?.kind!=='transfer_control'||control.action!=='resume'||control.id!==externalId
+          ||control.transfer?.kind!=='transfer'||control.transfer.planId!==externalId
+          ||initial?.kind!=='transfer'||initial.planId!==externalId)throw new Error('续传审批与传输标识不一致');
+      const immutable=value=>{const {expiresAt,...rest}=value;return JSON.stringify(canonical(rest));};
+      if(immutable(initial)!==immutable(control.transfer))throw new Error('续传审批改变了已冻结的传输内容');
+      if(!Number.isSafeInteger(deadline)||deadline<=now||deadline>now+86430_000||deadline!==control.transfer.expiresAt)throw new Error('续传期限与精确审批不一致');
+      // The original record retains its single concurrency slot and original history.
+      // The separate control history records the new approval; its permit is single-use.
+      this.#db.prepare('UPDATE operations SET grant_id=?,host_revision=?,policy_revision=?,expires_at=?,authorization_invalidated=0 WHERE id=?')
+        .run(permit.grant_id,permit.host_revision,permit.policy_revision,deadline,original.id);
+      this.#db.prepare("UPDATE operations SET external_kind='transfer-renewal',external_id=? WHERE id=?").run(externalId,permit.id);
+      this.#audit({threadId,hostId:original.host_id,operationId:original.id,event:'external_operation_renewed',summary:'重新批准文件传输',result:'ready',reason:'续传许可 '+permit.id+' 已绑定原传输；保留原始审批与并发占位',policyRevision:permit.policy_revision});
+      return {id:original.id,threadId,hostId:original.host_id,kind,externalId,status:'active',expiresAt:deadline,policyRevision:permit.policy_revision,authorizationInvalidated:false};
+    });
+  }
+  markOperationUnknown(operationId,reason='连接中断，远端结果待核实') {
+    identity(operationId,'执行标识');
+    return this.#transaction(()=>{this.#db.prepare("UPDATE execution_history SET status='unknown',output_notice=? WHERE operation_id=? AND completion_known=0").run(text(reason,'状态原因',512),operationId);});
   }
   beginNativeOperation(threadId, id, input, explanation, promptToken, expectedPolicyRevision) {
     identity(threadId, '聊天标识'); hostId(id); identity(promptToken, '原生确认标识');
@@ -667,7 +745,7 @@ export class Store {
           return { status: 'pending', approval: this.#approval(row) };
         }
       }
-      const active = this.#db.prepare("SELECT COUNT(*) AS n FROM operations WHERE host_id=? AND status='active' AND expires_at>?").get(id, now).n;
+      const active = this.#db.prepare("SELECT COUNT(*) AS n FROM operations WHERE host_id=? AND status='active' AND counts_concurrency=1 AND (durable=1 OR expires_at>?)").get(id, now).n;
       if (active >= record.policy.maxConcurrent) return denied('CONCURRENCY_LIMIT', '主机正在执行的操作达到并发上限，请稍后重试');
       const operationId = randomUUID();
       if (approved) this.#db.prepare("UPDATE approvals SET status='consumed' WHERE id=? AND status='approved'").run(approved.id);

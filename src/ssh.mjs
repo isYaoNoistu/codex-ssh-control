@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { createOutputScanner } from './operation-display.mjs';
+import { prepareInvocation } from './transport.mjs';
 
 export function shellQuote(value) { return "'"+String(value).replaceAll("'", "'\"'\"'")+"'"; }
 export function buildSshArgs(host, command, cwd=host.defaultCwd) {
@@ -13,7 +14,7 @@ export function buildSshArgs(host, command, cwd=host.defaultCwd) {
  return args;
 }
 
-export function createRunner({spawnImpl=spawn,outputLimit=128*1024}={}) {
+export function createRunner({spawnImpl=spawn,outputLimit=128*1024,dataDir}={}) {
  const tasks=new Map();
  function owned(threadId,id) {
   const t=tasks.get(id);
@@ -57,7 +58,8 @@ export function createRunner({spawnImpl=spawn,outputLimit=128*1024}={}) {
    t[channel]+=bytes.subarray(0,length).toString('utf8');
   }
   try {
-   t.child=spawnImpl(process.platform==='win32'?'ssh.exe':'ssh',buildSshArgs(host,command,cwd),{shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});
+   const invocation=prepareInvocation(host,command,cwd,{dataDir});
+   t.child=spawnImpl(invocation.file,invocation.args,{shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});
    const stdoutDecoder=new StringDecoder('utf8'),stderrDecoder=new StringDecoder('utf8');
    t.child.stdout.on('data',b=>append('stdout',stdoutDecoder.write(b)));
    t.child.stderr.on('data',b=>append('stderr',stderrDecoder.write(b)));

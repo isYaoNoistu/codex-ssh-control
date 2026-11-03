@@ -279,7 +279,7 @@ test('schema 3 migration invalidates legacy approvals without inventing unavaila
   assert.deepEqual(reopened.state('chat').grantedHostIds, ['prod']);
   assert.equal(reopened.listHistory().items.length, 0);
   const versionDb = new DatabaseSync(join(directory, 'store.sqlite'));
-  try { assert.equal(versionDb.prepare('PRAGMA user_version').get().user_version, 4); } finally { versionDb.close(); }
+  try { assert.equal(versionDb.prepare('PRAGMA user_version').get().user_version, 5); } finally { versionDb.close(); }
 });
 
 test('native nonces cannot be reused and new authorization cannot revive cancelled exact tickets', t => {

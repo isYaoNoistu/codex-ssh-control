@@ -21,9 +21,17 @@ description: Use when the user explicitly asks to open codex-ssh-control, manage
 
 执行前先在聊天说明具体目的、目标和预期影响，再把同样清楚的说明放入 `explanation`。`ssh_exec`、`ssh_run_action`、`ssh_write_file`、`ssh_delete_file` 必须提供这个参数；读取、列目录和连接测试可使用可信的固定操作说明。例如重启应用服务应说明“让刚更新的应用配置生效；重启期间服务会短暂中断”，不能只写“执行命令”。说明不授予权限。
 
-需要批准时，工具在当前调用内弹出原生确认：先展示目的，再展示请求的原命令和实际完整命令、主机、工作目录；文件操作显示路径和完整写入内容。用户确认后同一调用自动继续，只根据实际返回的任务或结果报告状态。拒绝、取消、超时或宿主不支持原生确认时，明确说明操作未执行。不能自行批准、读取 UI token、修改数据库、改用本地 SSH/别的工具或改写命令来绕过拒绝。敏感路径和凭据不能通过审批解除保护。
+需要批准时，工具在当前调用内弹出原生确认：先展示目的，再展示请求的原命令和实际完整命令、主机、工作目录；文件操作显示路径和完整写入内容。用户确认后同一调用自动继续，只根据实际返回的任务或结果报告状态。审批拒绝、审批取消、审批超时或宿主不支持原生确认时，说明尚未执行。执行已经启动后的超时或断线只能说明结果尚未确认，不能说没有执行，也不能自动重放。不能自行批准、读取 UI token、修改数据库、改用本地 SSH/别的工具或改写命令来绕过拒绝。敏感路径和凭据不能通过审批解除保护。
 
 授权有有效期，保存策略或连接信息、禁用、撤销会使相关授权/审批失效。仅授权不会执行命令。多台主机可同时授权，每次操作指定 `hostId`。异步命令用 `ssh_task_read` 查看，用 `ssh_task_cancel` 取消；取消不保证远端后台进程已结束。
+
+## 长任务与制品传输
+
+预计数分钟的命令使用 `ssh_job_submit({hostId,command,cwd,explanation,idempotencyKey})`，不要套入短时 `ssh_exec`。后台任务和原始 Shell 必须分别由用户在权限表单启用；未启用就报告所缺权限，不绕过。`idempotencyKey` 为该次意图生成后保持不变，不能在未知结果时换 key 重交。返回 `job.id` 后，用 `ssh_job_read({taskId:job.id,cursor:0})` 查询；后续传回 `nextCursor` 获取增量。只有 `status:"completed"`、`observation:"confirmed"` 且 `exitCode:0` 才能启动依赖它的下一步，例如 pull 成功后再提交 up。`unknown` 或断线用 `ssh_job_reconcile({taskId})` 核实原任务，不重提交；如已失去聊天授权，`refresh:false` 只能读本机已有记录。停止用 `ssh_job_cancel({taskId,explanation})` 原生批准后请求终止。取消与撤销均不能回滚既有副作用。
+
+二进制文件用 `ssh_transfer_prepare({hostId,direction:"upload"或"download",localPath,remotePath})`，两端均须有对应目录权限并启用制品传输；当前本机需 Windows 或 Linux。核对返回的源目标、大小、SHA256、期限，再调用 `ssh_transfer_start({planId,explanation})` 请求批准。不要把二进制内容塞进聊天或文本写入工具。`ssh_transfer_read({transferId})` 查进度，`ssh_transfer_resume({transferId,explanation})` 重新批准并核验相同源与前缀后续传。源变化应重新准备新计划；只有 completed 才报告成功。`commit_unknown` 表示提交结果未知，不能换目标重传或宣称回滚。暂停后用户可申请恢复核实原计划；清理仅用 `ssh_transfer_cleanup({transferId,explanation})` 清理其自有临时文件。
+
+目录使用 `ssh_transfer_manifest` 获取有限清单；清单不是写入批准。按 `directoryRequests` 用 `ssh_transfer_mkdir({hostId,side,root,path,explanation})` 逐项申请目录，再逐文件 prepare/start。只传各工具 schema 接受的字段，不把整份 manifest 请求照搬。制品目标必须是新路径；不支持覆盖已有制品、空目录镜像、owner/group/ACL迁移。需要 SFTP/SCP 协议、PTY、密码或密钥轮换时说明当前未提供，不编造工具。
 
 用户可在 `ssh_manager` 的主机详情页切换“连接设置”和“权限设置”；“执行历史”紧邻“审计”，展示操作说明、完整命令和经过敏感检查的输出。历史每条输出最多 32 KiB，保留最近 500 条已结束记录且不超过 30 天；文件正文不写入历史，升级前的输出无法补回。历史查询属于用户界面功能，不读取 UI token 代用户调用。
 

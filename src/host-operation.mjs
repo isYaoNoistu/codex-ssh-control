@@ -7,5 +7,6 @@ export function normalizeHostOperation(input, host) {
   if (operation.kind === 'command' && input.cwd === undefined && !resolveSafeCommand(operation.command)) {
     return normalizeOperation({ ...operation, cwd: host?.defaultCwd ?? '' });
   }
+  if(operation.kind==='job'&&input.cwd===undefined)return normalizeOperation({...operation,cwd:host?.defaultCwd||'/'});
   return operation;
 }

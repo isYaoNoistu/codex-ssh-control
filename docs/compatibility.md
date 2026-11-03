@@ -4,6 +4,16 @@ codex-ssh-control 在本机运行，通过 OpenSSH 执行远程操作。服务�
 
 以下 0.3.2 及更早的记录来自更名前的本地插件，保留当时的版本与验证范围。更名后的发布应单独记录测试、安装和实际运行结果。
 
+## 0.4.0 连接、持久任务与制品传输
+
+2026-11-03：Windows 最终 Node 回归 **347 通过、0 失败、2 跳过**（POSIX socket 路径与 macOS 专属测试），共 349 项。独立 Linux Node 24 客户端运行全部 29 个测试文件通过，并验证真实 ProxyJump 与 ControlMaster。Linux Python helper 共 47 项：root **46 通过、1 个 500 MiB opt-in 跳过**；普通用户 **45 通过、2 跳过**（额外跳过需 root 的 owner/group 测试）。500 MiB 的真实 SSH 中断续传验收另行通过，并非以跳过当作成功。
+
+最终 runtime → 真实 SSH 验证 **4/4 通过**，覆盖原生确认模拟门禁、Store、能力探测、目录创建、长任务分页、32 MiB 撤销后新批准续传与单一并发额度。五个发行版、真实大文件及基准细节见 [集成测试记录](integration-testing.md)。全部使用临时 Docker fixture，没有连接用户服务器。
+
+独立审查修复了取消先于提交、日志乱序、续传期限、递归子目录拒绝规则等问题，均有回归。实际 Chromium 145 侧栏验证覆盖连接/指纹/跳板、可视化权限、任务分页、恢复、撤销按钮状态、320px 布局和输出转义，详见 [浏览器验证](ui-browser-verification.md)。模拟 bridge 与真实 Codex 窗口验收分别记录，不相互替代。
+
+本机制品通道只支持 Windows/Linux；macOS 尚无等价本地 ACL/xattr 检查，明确拒绝并报告能力不可用，不能宣称 macOS 文件传输兼容。CI 配置提供客户端与远端发行版矩阵，实际 GitHub 作业结果须单独查看。PTY、密码存储、密钥轮换及 SFTP/SCP 协议仍未实现，详见 [基础设施契约](infrastructure-contract.md)。
+
 ## 0.3.3 项目与插件更名
 
 2026-11-03，项目、插件 ID、marketplace、MCP 服务名称、UI 标识和技能显示名称统一为 `codex-ssh-control`，安装引用为 `codex-ssh-control@codex-ssh-control`。保留原有数据目录、环境变量、技能所有权标记和 `/ssh-*` 快捷指令，以延续现有主机、权限、审计和历史。

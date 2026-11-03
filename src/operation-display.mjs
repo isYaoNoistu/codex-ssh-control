@@ -19,6 +19,13 @@ export function normalizeExplanation(value, { required = false, fallback = '' } 
 export function operationPresentation(evaluation, explanation) {
   if (!evaluation || typeof evaluation !== 'object') throw new Error('缺少已验证的操作');
   const operation = normalizeOperation(evaluation.operation);
+  if(['job','job_control','transfer','transfer_inspect','transfer_control','transfer_mkdir','capabilities'].includes(operation.kind)) {
+    const mutating=['job','transfer','transfer_mkdir'].includes(operation.kind)||['cancel','resume','cleanup'].includes(operation.action);
+    const fallback=operation.kind==='capabilities'?'读取远端系统与文件访问能力':operation.kind==='transfer_inspect'?'核对传输两端路径和源文件摘要':'读取当前聊天任务的已有状态';
+    const explanationText=normalizeExplanation(explanation,{required:mutating,fallback:mutating?'':fallback});
+    if(unsafeDisplay.test(JSON.stringify(operation).replaceAll('\\n','').replaceAll('\\r','').replaceAll('\\t','')))throw new Error('操作包含无法安全展示的控制字符');
+    return {summary:evaluation.summary,explanation:explanationText,requestedCommand:operation.command??'',command:evaluation.command??'',cwd:operation.cwd??'',operation,mutating};
+  }
   for (const value of [operation.command, operation.cwd, operation.path, evaluation.command]) {
     if (typeof value === 'string' && unsafeDisplay.test(value)) throw new Error('命令或目标路径包含无法安全展示的控制字符或双向文本控制符');
   }

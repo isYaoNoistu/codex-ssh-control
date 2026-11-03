@@ -1,3 +1,6 @@
+import { validateInfrastructurePolicy, normalizeInfrastructureOperation, evaluateInfrastructureOperation } from './infrastructure-policy.mjs';
+import { INFRASTRUCTURE_DEFAULTS } from './infrastructure-defaults.mjs';
+import { posix } from 'node:path';
 const decisions = new Set(['allow', 'ask', 'deny']);
 const nameParameter = Object.freeze({ name: 'name', label: '服务或容器名称', type: 'string', required: true });
 const actionDefinitions = [
@@ -25,7 +28,7 @@ export const ACTION_CATALOG = Object.freeze(actionDefinitions.map(([id, label, d
 })));
 const catalog = new Map(ACTION_CATALOG.map(action => [action.id, action]));
 function freeze(value) { for (const item of Object.values(value)) if (item && typeof item === 'object') freeze(item); return Object.freeze(value); }
-export const DEFAULT_POLICY = freeze({ mode: 'restricted', roots: [], blockedPaths: [], commandRules: [], actions: Object.fromEntries(ACTION_CATALOG.map(a => [a.id, a.defaultDecision])), grantMinutes: 60, timeoutSeconds: 60, maxConcurrent: 2, maxOutputKiB: 128 });
+export const DEFAULT_POLICY = freeze({ mode: 'restricted', roots: [], blockedPaths: [], commandRules: [], actions: Object.fromEntries(ACTION_CATALOG.map(a => [a.id, a.defaultDecision])), grantMinutes: 60, timeoutSeconds: 60, maxConcurrent: 2, maxOutputKiB: 128, ...INFRASTRUCTURE_DEFAULTS });
 export function defaultPolicy() { return structuredClone(DEFAULT_POLICY); }
 export const CORE_PROTECTED_PATHS = Object.freeze(['/proc', '/sys', '/dev', '/run', '/etc/ssh', '/etc/ssl/private', '/etc/shadow', '/etc/gshadow', '/etc/passwd', '/etc/group', '/etc/sudoers', '/etc/sudoers.d', '/etc/pam.d', '/etc/security', '/etc/systemd', '/etc/docker', '/etc/ufw', '/etc/nftables.conf', '/etc/iptables', '/etc/firewalld', '/etc/fail2ban', '/etc/audit', '/etc/selinux', '/etc/apparmor', '/etc/apparmor.d', '/etc/environment', '/etc/profile', '/etc/profile.d', '/etc/bash.bashrc', '/etc/ld.so.preload', '/etc/ld.so.conf', '/etc/ld.so.conf.d', '/etc/fish']);
 const protectedSegments = new Set(['.ssh', '.aws', '.azure', '.kube', '.gnupg', '.docker', '.bashrc', '.bash_profile', '.bash_login', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin']);
@@ -61,9 +64,10 @@ export function validatePolicy(input) {
     if (!Number.isInteger(policy[key]) || policy[key] < min || policy[key] > max) throw new Error(key + '超出允许范围');
   }
   policy.roots = list(policy.roots, '目录').map(root => {
-    object(root, ['id', 'path', 'read', 'write'], '目录');
+    object(root, ['id', 'path', 'read', 'write', 'match'], '目录');
     if (typeof root.read !== 'boolean' || typeof root.write !== 'boolean') throw new Error('目录读写权限必须是布尔值');
-    return { id: slug(root.id), path: absolutePath(root.path), read: root.read, write: root.write };
+    if(root.match!==undefined&&!['exact','recursive'].includes(root.match))throw new Error('目录匹配方式无效');
+    return { id: slug(root.id), path: absolutePath(root.path), read: root.read, write: root.write, ...(root.match===undefined?{}:{match:root.match}) };
   });
   unique(policy.roots, r => r.id, '目录 ID'); unique(policy.roots, r => r.path, '目录路径');
   policy.blockedPaths = list(policy.blockedPaths, '禁止目录').map(absolutePath);
@@ -80,7 +84,7 @@ export function validatePolicy(input) {
     const decision = policy.actions[action.id];
     if (!decisions.has(decision) || (action.mutating && decision === 'allow')) throw new Error(action.label + '不允许自动执行修改操作');
   }
-  return policy;
+  return {...policy,...validateInfrastructurePolicy(policy,catalog)};
 }
 function actionArgs(actionId, args = {}) {
   const action = catalog.get(actionId);
@@ -94,6 +98,7 @@ function actionArgs(actionId, args = {}) {
 export function normalizeOperation(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('操作必须是对象');
   const { kind } = input;
+  const extended=normalizeInfrastructureOperation(input);if(extended)return extended;
   if (kind === 'test') { object(input, ['kind'], '操作'); return { kind }; }
   if (kind === 'action') { object(input, ['kind', 'actionId', 'args'], '操作'); return { kind, actionId: input.actionId, args: actionArgs(input.actionId, input.args) }; }
   if (kind === 'command') {
@@ -204,17 +209,20 @@ function sensitiveCommand(command, cwd, blockedPaths) {
 }
 export function evaluateOperation(inputPolicy, inputOperation) {
   const policy = validatePolicy(inputPolicy), operation = normalizeOperation(inputOperation);
+  const extended=evaluateInfrastructureOperation(policy,operation);if(extended)return extended;
   const summary = operation.kind === 'action' ? catalog.get(operation.actionId).label + (operation.args.name ? '：' + operation.args.name : '') : operation.kind === 'command' ? '执行自定义命令' : operation.kind === 'test' ? '测试连接' : ({ list: '列出目录', read: '读取文件', write: '写入文件', delete: '删除文件' }[operation.kind] + '：' + operation.path);
   const result = (decision, code, reason, extra = {}) => ({ decision, code, reason, operation, summary, ...extra });
   if (['list', 'read', 'write', 'delete'].includes(operation.kind)) {
     if (isProtectedPath(operation.path, policy.blockedPaths)) return result('deny', 'PROTECTED_PATH', '安全配置、凭据或明确禁止的路径不可访问');
     if (operation.kind === 'write' && isSensitiveContent(operation.content)) return result('deny', 'SENSITIVE_CONTENT', '检测到私钥或凭据内容，禁止写入');
-    const root = policy.roots.filter(r => inside(operation.path, r.path)).sort((a, b) => b.path.length - a.path.length)[0];
+    const root = policy.roots.filter(r => r.match==='exact'?operation.path===r.path:inside(operation.path, r.path)).sort((a, b) => b.path.length - a.path.length)[0];
     const mutating = ['write', 'delete'].includes(operation.kind);
     if (!root || !(mutating ? root.write : root.read)) return result('deny', 'PATH_NOT_ALLOWED', '目标不在具有所需权限的目录内');
-    if (mutating && operation.path === root.path) return result('deny', 'ROOT_MUTATION_DENIED', '不能覆盖或删除授权根目录');
-    const relativePath = operation.path === root.path ? '.' : operation.path.slice(root.path === '/' ? 1 : root.path.length + 1);
-    const file = { root: root.path, relativePath, blockedPaths: [...policy.blockedPaths] };
+    if (mutating && operation.path === root.path && root.match!=='exact') return result('deny', 'ROOT_MUTATION_DENIED', '不能覆盖或删除授权根目录');
+    const exactFile=root.match==='exact'&&operation.kind!=='list';
+    const fileRoot=exactFile?posix.dirname(root.path):root.path;
+    const relativePath = exactFile?posix.basename(root.path):operation.path === root.path ? '.' : operation.path.slice(root.path === '/' ? 1 : root.path.length + 1);
+    const file = { root: fileRoot, relativePath, blockedPaths: [...policy.blockedPaths] };
     return result(mutating ? 'ask' : 'allow', mutating ? 'MUTATION_REQUIRES_APPROVAL' : 'READ_ALLOWED', mutating ? '文件修改必须由用户确认' : '允许目录内的非敏感读取', { file });
   }
   let action, supplement = null;
@@ -226,6 +234,8 @@ export function evaluateOperation(inputPolicy, inputOperation) {
     if (!action) return policy.mode === 'restricted' ? result('deny', 'RAW_SHELL_DISABLED', '受限模式只接受内置操作或完全匹配的只读命令') : result('ask', 'RAW_SHELL_REQUIRES_APPROVAL', '完整 Shell 必须确认；目录规则不能限制其内部操作', { command: operation.command });
   } else action = operation.kind === 'test' ? { kind: 'action', actionId: 'connection.test', args: {} } : operation;
   const info = catalog.get(action.actionId);
+  const argumentRule=policy.actionArguments[action.actionId];
+  if(argumentRule&&!argumentRule.names.includes(action.args.name))return result('deny','ARGUMENT_NOT_ALLOWED','目标服务或容器不在名称白名单中');
   if (info.mutating && action.actionId.startsWith('service.') && securityService(action.args.name)) return result('deny', 'SECURITY_SERVICE_DENIED', '禁止修改 SSH、认证、防火墙或其他安全服务');
   const command = buildActionCommand(action.actionId, action.args);
   const equivalents = [command, action.actionId, ...[...aliases].filter(([, id]) => id === action.actionId).map(([alias]) => alias)];
