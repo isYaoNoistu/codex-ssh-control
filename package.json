@@ -1,6 +1,6 @@
 {
   "name": "codex-ssh-control",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "type": "module",
   "description": "Native Codex SSH sidebar with unified visual permissions, immediate approval and execution history",

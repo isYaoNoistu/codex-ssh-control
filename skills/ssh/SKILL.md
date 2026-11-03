@@ -19,6 +19,8 @@ description: Use when the user explicitly asks to open codex-ssh-control, manage
 
 用户明确请求操作后先用 `ssh_permissions({hostId})` 查看规则与固定操作目录，优先用 `ssh_run_action` 查询状态或申请服务/容器操作。文件使用 `ssh_list_directory`、`ssh_read_file`、`ssh_write_file`、`ssh_delete_file`。默认没有目录访问权；目录只能由用户在侧栏可视化配置。`ssh_exec` 在默认模式下只接受少量精确匹配的状态查询别名。
 
+读取容器日志用 `ssh_run_action` 的 `container.logs`，`args` 包含容器 `name`，可选整数 `tail`（1–1000，默认 300）和 `sinceMinutes`（1–1440，默认 15）。每次读取需要原生确认，仍受容器名称白名单约束。只取有界的近期日志，不接受 follow、details 或额外 Shell 参数。返回的 stdout 和 stderr 都可能包含应用日志；按日志内容和退出码判断，不能把整个 stderr 当作失败。敏感输出被隐藏或输出截断时应说明检查范围有限，不得换工具绕过隐藏。
+
 执行前先在聊天说明具体目的、目标和预期影响，再把同样清楚的说明放入 `explanation`。`ssh_exec`、`ssh_run_action`、`ssh_write_file`、`ssh_delete_file` 必须提供这个参数；读取、列目录和连接测试可使用可信的固定操作说明。例如重启应用服务应说明“让刚更新的应用配置生效；重启期间服务会短暂中断”，不能只写“执行命令”。说明不授予权限。
 
 聊天说明按以下顺序分区，不把目的、主机和命令拼成一个长段落：用以 **执行目的** 开头的引用块说明目的和影响；下一段单独列出目标主机、操作和工作目录；已知的原始 Shell 命令用 `bash` 围栏代码块原样显示。受管操作只展示已核实的操作名和参数，不猜测插件生成的命令；实际完整命令由确认框展示。文件内容用独立的文本代码块。`explanation` 仍提交普通文本，不加 Markdown 标记。聊天展示不代表批准，不另发一个聊天确认问题。

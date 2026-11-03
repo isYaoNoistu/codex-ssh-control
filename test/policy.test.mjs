@@ -13,9 +13,10 @@ test('defaults grant only reviewed non-mutating actions and no directories', () 
   assert.equal(policy.mode, 'restricted');
   assert.deepEqual(policy.roots, []);
   assert.equal(policy.grantMinutes, 60);
-  assert.equal(ACTION_CATALOG.length, 18);
+  assert.equal(ACTION_CATALOG.length, 19);
   for (const action of ACTION_CATALOG) {
-    assert.equal(policy.actions[action.id], action.mutating ? 'ask' : 'allow');
+    assert.equal(typeof action.approvalRequired, 'boolean');
+    assert.equal(policy.actions[action.id], action.mutating || action.approvalRequired ? 'ask' : 'allow');
     assert.equal(action.defaultDecision, policy.actions[action.id]);
   }
   policy.actions['system.summary'] = 'deny';
@@ -137,7 +138,7 @@ test('actions run only fixed commands in a clean environment', () => {
     assert.match(command, /PATH=\/usr\/bin:\/bin/);
     assert.ok(!command.includes('inspect'));
     assert.ok(!command.includes('journalctl'));
-    assert.equal(decide({ kind: 'action', actionId: action.id, args }).decision, action.mutating ? 'ask' : 'allow');
+    assert.equal(decide({ kind: 'action', actionId: action.id, args }).decision, action.mutating || action.approvalRequired ? 'ask' : 'allow');
   }
   assert.match(buildActionCommand('service.status', { name: 'app' }), /show .*--property=/);
   assert.match(buildActionCommand('docker.containers'), /--host unix:\/\/\/var\/run\/docker.sock/);
@@ -198,4 +199,101 @@ test('supplemental rules also cover equivalent catalog action entry points', () 
 test('environment and credential-management shell operations cannot expose secrets', () => {
   const policy = configured({ mode: 'approval' });
   for (const command of ['env', '/usr/bin/env', 'set', 'export -p', 'declare -x', 'typeset -x', 'gcloud auth print-access-token', 'az account get-access-token', 'docker --context prod inspect app', 'docker container inspect app']) assert.equal(decide({ kind: 'command', command }, policy).decision, 'deny', command);
+});
+
+test('root cwd preserves safe aliases and raw shell policy decisions', () => {
+  for (const command of ['docker ps', 'df -h', 'free -m']) {
+    assert.equal(decide({ kind: 'command', command, cwd: '/' }).code, 'ACTION_ALLOWED', command);
+  }
+  const operation = { kind: 'command', command: 'docker logs app', cwd: '/' };
+  assert.equal(decide(operation).code, 'RAW_SHELL_DISABLED');
+  assert.equal(decide(operation, configured({ mode: 'approval' })).code, 'RAW_SHELL_REQUIRES_APPROVAL');
+  assert.equal(decide({ kind: 'command', command: 'echo hello', cwd: '/' }, configured({ commandRules: [{ id: 'echo', match: 'exact', pattern: 'echo hello', decision: 'ask' }] })).code, 'RAW_SHELL_DISABLED');
+});
+
+test('root cwd does not erase invalid paths or bypass sensitive and blocked paths', () => {
+  const policy = configured({ mode: 'approval', blockedPaths: ['/restricted', '/srv/app/cache'] });
+  for (const command of ['cat //etc/hosts', 'cat /srv//app/file', 'cat ./file', 'cat ../file', 'cat /srv/./file', 'cat /srv/../file', 'cat /etc/shadow', 'cat .env', 'cat app/.ssh/config', 'cat /restricted/file', 'cat restricted/file', 'cat /srv/app/cache/file', 'echo password=fixture-password', 'docker inspect app']) {
+    const result = decide({ kind: 'command', command, cwd: '/' }, policy);
+    assert.equal(result.code, 'SENSITIVE_COMMAND', command);
+  }
+  for (const cwd of ['//', '/srv//app', '/srv/./app', '/srv/../app']) {
+    assert.throws(() => normalizeOperation({ kind: 'command', command: 'echo hello', cwd }), cwd);
+  }
+  assert.equal(decide({ kind: 'command', command: 'cat cache/file', cwd: '/srv/app' }, policy).code, 'SENSITIVE_COMMAND');
+  assert.equal(decide({ kind: 'command', command: 'cat restricted-other/file', cwd: '/' }, policy).code, 'RAW_SHELL_REQUIRES_APPROVAL');
+  assert.equal(decide({ kind: 'write', path: '/srv/app/settings.txt', content: 'password=fixture-password' }, policy).code, 'SENSITIVE_CONTENT');
+});
+
+test('container logs catalog declares bounded optional integers and mandatory approval', () => {
+  const action = ACTION_CATALOG.find(item => item.id === 'container.logs');
+  assert.ok(action);
+  assert.equal(action.mutating, false);
+  assert.equal(action.approvalRequired, true);
+  assert.equal(action.defaultDecision, 'ask');
+  assert.deepEqual(action.parameters.map(({ label, ...parameter }) => parameter), [
+    { name: 'name', type: 'string', required: true },
+    { name: 'tail', type: 'integer', minimum: 1, maximum: 1000, default: 300, required: false },
+    { name: 'sinceMinutes', type: 'integer', minimum: 1, maximum: 1440, default: 15, required: false },
+  ]);
+  assert.ok(Object.isFrozen(action.parameters));
+  for (const parameter of action.parameters) assert.ok(Object.isFrozen(parameter));
+});
+
+test('container logs normalizes defaults and produces the exact bounded fixed command', () => {
+  const operation = normalizeOperation({ kind: 'action', actionId: 'container.logs', args: { name: 'my-app' } });
+  assert.deepEqual(operation, { kind: 'action', actionId: 'container.logs', args: { name: 'my-app', tail: 300, sinceMinutes: 15 } });
+  const prefix = 'cd / && /usr/bin/env -i PATH=/usr/bin:/bin HOME=/proc/self/fd LANG=C LC_ALL=C SYSTEMD_PAGER=cat SYSTEMD_COLORS=0 /usr/bin/docker --config /proc/self/fd --host unix:///var/run/docker.sock';
+  assert.equal(buildActionCommand('container.logs', { name: 'my-app' }), prefix + " logs --since '900s' --tail 300 --timestamps -- 'my-app'");
+  assert.equal(buildActionCommand('container.logs', { name: 'my-app', tail: 1, sinceMinutes: 1 }), prefix + " logs --since '60s' --tail 1 --timestamps -- 'my-app'");
+  assert.equal(buildActionCommand('container.logs', { name: 'my-app', tail: 1000, sinceMinutes: 1440 }), prefix + " logs --since '86400s' --tail 1000 --timestamps -- 'my-app'");
+  assert.deepEqual(normalizeOperation({ kind: 'action', actionId: 'container.logs', args: { name: 'my-app', tail: 25, sinceMinutes: 30 } }).args, { name: 'my-app', tail: 25, sinceMinutes: 30 });
+});
+
+test('container logs rejects missing names, injection and unknown arguments', () => {
+  for (const args of [
+    undefined, {}, { name: '' }, { name: '-app' }, { name: 'app@host' }, { name: 'app;id' },
+    { name: 'app$(id)' }, { name: "app'" }, { name: 'app\nnext' }, { name: '/app' }, { name: 'a'.repeat(129) },
+    ...['follow', 'details', 'env', 'since', 'until', 'command', 'args', 'flags'].map(key => ({ name: 'app', [key]: '--follow' })),
+  ]) {
+    assert.throws(() => normalizeOperation({ kind: 'action', actionId: 'container.logs', args }), /名称|未知字段/, JSON.stringify(args));
+    assert.throws(() => buildActionCommand('container.logs', args), /名称|未知字段/, JSON.stringify(args));
+  }
+});
+
+test('container logs integer limits reject coercion, fractions and non-numeric values', () => {
+  for (const [key, maximum] of [['tail', 1000], ['sinceMinutes', 1440]]) {
+    for (const value of [0, -1, maximum + 1, 1.5, '5', '1;id', '', null, true, false, NaN, Infinity, {}, []]) {
+      const args = { name: 'app', [key]: value };
+      assert.throws(() => normalizeOperation({ kind: 'action', actionId: 'container.logs', args }), new RegExp(key), `${key}=${JSON.stringify(value)}`);
+      assert.throws(() => buildActionCommand('container.logs', args), new RegExp(key), `${key}=${JSON.stringify(value)}`);
+    }
+  }
+});
+
+test('container logs always needs approval and policy cannot allow it automatically', () => {
+  const operation = { kind: 'action', actionId: 'container.logs', args: { name: 'app' } };
+  assert.equal(defaultPolicy().actions['container.logs'], 'ask');
+  assert.equal(validatePolicy({ actions: { 'disk.usage': 'allow' } }).actions['container.logs'], 'ask');
+  for (const mode of ['restricted', 'approval']) {
+    const result = decide(operation, configured({ mode }));
+    assert.equal(result.code, 'ACTION_REQUIRES_APPROVAL');
+    assert.equal(result.decision, 'ask');
+    assert.deepEqual(result.operation.args, { name: 'app', tail: 300, sinceMinutes: 15 });
+    assert.throws(() => configured({ mode, actions: { 'container.logs': 'allow' } }), /容器日志/);
+  }
+  assert.equal(decide(operation, configured({ actions: { 'container.logs': 'deny' } })).code, 'ACTION_DENIED');
+});
+
+test('container logs honors name allowlists and every command deny entry point', () => {
+  const operation = { kind: 'action', actionId: 'container.logs', args: { name: 'app', tail: 50, sinceMinutes: 5 } };
+  const policy = configured({ actionArguments: { 'container.logs': { names: ['app'] } } });
+  assert.equal(decide(operation, policy).decision, 'ask');
+  assert.equal(decide({ ...operation, args: { name: 'other' } }, policy).code, 'ARGUMENT_NOT_ALLOWED');
+  for (const name of ['-app', 'app;id', 'app@host']) assert.throws(() => configured({ actionArguments: { 'container.logs': { names: [name] } } }));
+  const command = buildActionCommand('container.logs', operation.args);
+  for (const [match, pattern] of [['exact', 'container.logs'], ['exact', 'docker logs app'], ['prefix', 'docker logs '], ['exact', command], ['contains', '--tail 50']]) {
+    const result = decide(operation, configured({ commandRules: [{ id: 'logs', match, pattern, decision: 'deny' }] }));
+    assert.equal(result.code, 'ACTION_DENIED', `${match}: ${pattern}`);
+  }
 });

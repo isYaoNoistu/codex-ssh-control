@@ -7,13 +7,13 @@ User requirement: visual configuration, no JSON editing. Non-sensitive reads/sta
 Policy and presentation modules normalize and evaluate operations; Store owns atomic authorization, confirmation tickets, execution leases, audit and history. Server owns trusted chat identity, native elicitation and UI capability checks; runner/file broker use the exact Store permit snapshots. Node >=24, no npm runtime deps. Linux file operations require existing Python3 + openat2; no installed daemon. Tests use temporary databases, simulated SSH and local Linux fixtures, not real user state or servers.
 
 ## Policy module exports (independent)
-ACTION_CATALOG: [{id,label,description,category,mutating,defaultDecision,parameters:[{name,label,type:'string',required:true}]}].
+ACTION_CATALOG: [{id,label,description,category,mutating,approvalRequired,defaultDecision,parameters:[{name,label,type:'string'|'integer',required,minimum?,maximum?,default?}]}].
 Required IDs (fixed system binaries/clean environment, no user-controlled command text):
 connection.test; system.summary; disk.usage; disk.inodes; memory.usage; network.listeners;
 docker.containers; docker.stats; docker.disk; system.services; system.failed;
 service.status({name}); service.start({name}); service.stop({name}); service.restart({name});
-container.start({name}); container.stop({name}); container.restart({name}).
-status actions default allow, mutations default ask. Security service names (ssh/sshd/firewall/ufw/firewalld/nftables/iptables/fail2ban/auditd etc) cannot be controlled by mutation templates.
+container.start({name}); container.stop({name}); container.restart({name}); container.logs({name,tail?:integer,sinceMinutes?:integer}).
+Status actions default allow; mutations and container.logs default ask. The log action is nonmutating but approvalRequired, so policy validation rejects allow and execution always requires confirmation unless denied. tail is 1..1000, default300; sinceMinutes is 1..1440, default15. Reject unknown parameters, nonintegers, null and unsafe names. Existing policy action maps missing container.logs normalize to ask. Security service names (ssh/sshd/firewall/ufw/firewalld/nftables/iptables/fail2ban/auditd etc) cannot be controlled by mutation templates.
 DEFAULT_POLICY (or defaultPolicy() returning fresh object):
 {mode:'restricted',roots:[],blockedPaths:[],commandRules:[],actions:{[id]:'allow'|'ask'|'deny'},grantMinutes:60,timeoutSeconds:60,maxConcurrent:2,maxOutputKiB:128}.
 roots:[{id:string,path:absolute POSIX,read:boolean,write:boolean}] (read includes list; write covers create/replace/delete).
@@ -32,7 +32,7 @@ All mutating operations have minimum ask. File list/read allow only inside read 
 Core sensitive dirs/files deny in all file operations: /proc,/sys,/dev,/run,/etc/ssh,/etc/ssl/private,/etc/shadow,/etc/gshadow,/etc/passwd,/etc/group, plus ANY path segments .ssh,.aws,.azure,.kube,.gnupg,.docker, and file names .env*,id_rsa*,id_ed25519*,*.pem,*.key,*credential*,*secret*. Include exported protected-path helper so the remote helper can mirror these semantics.
 Sensitive writes (private-key markers/recognizable credential assignments) deny before approval. Docker auths registry entries containing auth and recognizable Base64 auth fragments are sensitive, including renamed/custom-location configs. Export isSensitiveContent(text) for file-broker read verification. Built-in guard is defense in depth, not a promise to detect every secret at arbitrary locations.
 Raw command reject visible sensitive paths and known credential operations; full shell remains explicit advanced escape with mandatory review, not filesystem sandbox.
-buildActionCommand(actionId,args) -> fixed shell command with carefully quoted validated params; status output must omit env/config secrets (no generic docker inspect/status logs). Avoid PATH/cwd/hooks as much as practical, use fixed Linux tools + env -i.
+buildActionCommand(actionId,args) -> fixed shell command with carefully quoted validated params; status output must omit env/config secrets (no generic docker inspect/status logs). The separately approved container.logs template uses the fixed Docker binary/socket/config plus logs --since '<sinceMinutes*60>s' --tail <tail> --timestamps -- '<name>'; no follow, details, arbitrary flags or Shell syntax. Both output streams retain existing sensitivity checks and output limits. See [Docker logs semantics](https://docs.docker.com/reference/cli/docker/container/logs/). Avoid PATH/cwd/hooks as much as practical, use fixed Linux tools + env -i.
 resolveSafeCommand(command) -> canonical action op|null for common exact read-only aliases (df -h, docker ps, docker ps -a, docker stats --no-stream, systemctl --failed, etc). No shell token rewriting; complex scripts can't match.
 The server uses evaluation.command to run actions and never original string for safe aliases.
 

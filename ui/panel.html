@@ -418,7 +418,7 @@
     for (const item of catalog) {
       if (item.category && !categories.has(item.category)) { categories.add(item.category); $('policy-actions').append(text('div', item.category, 'action-category')); }
       const row = text('div', '', 'action-rule'), label = text('div', ''); label.append(text('div', item.label), text('p', item.description, 'hint'));
-      const choices = item.mutating ? [['ask', '需确认'], ['deny', '禁止']] : [['allow', '自动允许'], ['ask', '需确认'], ['deny', '禁止']];
+      const choices = item.mutating || item.approvalRequired ? [['ask', '需确认'], ['deny', '禁止']] : [['allow', '自动允许'], ['ask', '需确认'], ['deny', '禁止']];
       const control = selectControl(choices, value.actions[item.id] || item.defaultDecision, item.label + '的权限'); control.dataset.actionId = item.id;
       row.append(label, control);
       let names = null, restrict = null;
@@ -456,18 +456,22 @@
     $('preview-path-fields').hidden = ['action', 'command'].includes(kind); $('preview-content-fields').hidden = kind !== 'write';
     parameterRows = []; $('preview-parameters').replaceChildren();
     if (kind === 'action') for (const parameter of actionCatalog.find(item => item.id === $('preview-action').value)?.parameters || []) {
-      const input = inputControl('', parameter.label, parameter.name); input.dataset.parameter = parameter.name; input.required = false;
+      const input = inputControl(String(parameter.default ?? ''), parameter.label, parameter.name); input.dataset.parameter = parameter.name; input.required = false;
+      // Preview validity must not block saving the independent policy settings.
+      input.setAttribute('form', '');
+      if (parameter.type === 'integer') { input.type = 'number'; input.step = '1'; if (parameter.minimum != null) input.min = String(parameter.minimum); if (parameter.maximum != null) input.max = String(parameter.maximum); }
       parameterRows.push({ parameter, input }); $('preview-parameters').append(fieldBox(parameter.label, input));
     }
   }
   function previewOperation() {
     const kind = $('preview-kind').value;
-    if (kind === 'action') return { kind, actionId: $('preview-action').value, args: Object.fromEntries(parameterRows.map(row => [row.parameter.name, row.input.value.trim()])) };
+    if (kind === 'action') return { kind, actionId: $('preview-action').value, args: Object.fromEntries(parameterRows.filter(row => row.parameter.required || row.input.value.trim() !== '').map(row => [row.parameter.name, row.parameter.type === 'integer' ? Number(row.input.value) : row.input.value.trim()])) };
     if (kind === 'command') return { kind, command: $('preview-command').value, ...($('preview-cwd').value.trim() ? { cwd: $('preview-cwd').value.trim() } : {}) };
     return { kind, path: $('preview-path').value.trim(), ...(kind === 'write' ? { content: $('preview-content').value } : {}) };
   }
   async function previewPolicy() {
     if (!canEdit() || !policyRecord || !$('policy-form').reportValidity()) return;
+    if (parameterRows.some(row => !row.input.reportValidity())) return;
     const hostId = policyRecord.hostId, operation = previewOperation(), draft = draftPolicy(); busy = true; epoch++; clearError(); render();
     $('preview-result').hidden = false; $('preview-result').textContent = '正在检查规则…'; $('preview-result').dataset.decision = '';
     try {

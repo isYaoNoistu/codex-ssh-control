@@ -12,7 +12,7 @@ import { normalizeHostOperation } from './host-operation.mjs';
 import { infrastructureDefinitions } from './infrastructure-api.mjs';
 import { createInfrastructureRuntime } from './infrastructure-runtime.mjs';
 
-const VERSION = '0.4.3';
+const VERSION = '0.4.4';
 const URI = 'ui://codex-ssh-control/manager-v1';
 const MIME = 'text/html;profile=mcp-app';
 const uiToken = randomBytes(32).toString('hex');
@@ -48,7 +48,7 @@ const definitions = [
  tool('ssh_request_access','申请 SSH 主机授权','没有有效快捷意图时，通过 Codex 原生确认授权当前对话访问指定主机。不能静默授权。',{hostIds:ids},['hostIds']),
  tool('ssh_exec','执行远程命令','先在聊天说明命令目的，并用 explanation 提交具体意义和预期影响。命令受权限策略约束；需要确认时原生弹窗展示说明及完整命令，确认后同一调用继续执行，无需去侧栏审批或重试。默认只允许固定只读别名。',{hostId:str,command:str,explanation:str,cwd:{type:'string',description:'原始命令省略时使用主机配置的默认远程目录；显式空字符串使用 SSH 登录目录。固定只读别名始终在 / 执行。'},timeoutSeconds:{type:'number',exclusiveMinimum:0,maximum:300}},['command','explanation']),
  tool('ssh_permissions','查看主机权限','查看目录、固定操作目录和权限规则。主机授权不代表每个操作获准。',{hostId:str},['hostId'],{read:true}),
- tool('ssh_run_action','执行受管操作','提交具体 explanation，说明操作意义和影响，并先告知用户。修改、启动、停止、重启会原生弹窗确认，确认后本次调用直接继续。凭据和安全配置拒绝。先查看 ssh_permissions 获取操作目录。',{hostId:str,actionId:str,args:arbitraryObject,explanation:str},['hostId','actionId','explanation']),
+ tool('ssh_run_action','执行受管操作','提交具体 explanation，说明操作意义和影响，并先告知用户。修改、启动、停止、重启和容器日志会原生确认，确认后本次调用直接继续。日志用 container.logs，参数 name、tail（1..1000，默认300）、sinceMinutes（1..1440，默认15）。凭据和安全配置拒绝。先查看 ssh_permissions 获取操作目录。',{hostId:str,actionId:str,args:arbitraryObject,explanation:str},['hostId','actionId','explanation']),
  tool('ssh_list_directory','列出远程目录','仅列出允许读取的目录，隐藏受保护文件，拒绝符号链接和跨挂载点。',{hostId:str,path:str,explanation:str},['path'],{read:true}),
  tool('ssh_delete_file','删除远程文件','说明删除的目的和影响后，原生弹窗当场确认。只删除允许写目录中的普通文件，不递归删除目录，禁止敏感文件。',{hostId:str,path:str,explanation:str},['path','explanation']),
  tool('ssh_test_connection','测试 SSH 连接','对已授权主机执行固定只读诊断，命令最长20秒。策略要求确认时原生弹窗当场确认，取消不执行。不自动信任主机公钥。',{hostId:str,explanation:str},['hostId'],{read:true}),

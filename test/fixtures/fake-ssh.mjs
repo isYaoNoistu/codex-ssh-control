@@ -16,6 +16,7 @@ childProcess.spawn=function(executable,args,options){
   const command=args.at(-1);
   let stderr='';
   let output=command.includes('SSH_CONTROL_OK')?'SSH_CONTROL_OK\ndeploy\nfixture\nLinux\n':command.includes('diagnostic-sensitive-fixture')?'api_key=test-fixture-value\n':'fixture command completed\n';
+  if(command.includes('diagnostic-stderr-fixture'))stderr='api_key=stderr-fixture-value';
   if(command.includes('python3')){
    const match=input.match(/base64\.b64decode\('([^']+)'\)/);
    const operation=JSON.parse(Buffer.from(match[1],'base64').toString('utf8')).operation;

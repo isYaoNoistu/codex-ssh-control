@@ -375,6 +375,11 @@ const policy = () => ({ mode: 'restricted', roots: [], blockedPaths: [], command
 const catalog = [
   { id: 'system.summary', label: '系统摘要', description: '读取系统信息', category: '系统', mutating: false, defaultDecision: 'allow', parameters: [] },
   { id: 'service.restart', label: '重启服务', description: '重启指定服务', category: '服务', mutating: true, defaultDecision: 'ask', parameters: [{ name: 'name', label: '服务名称', type: 'string', required: true }] },
+  { id: 'container.logs', label: '容器日志', description: '审批后读取有限日志', category: '容器', mutating: false, approvalRequired: true, defaultDecision: 'ask', parameters: [
+    { name: 'name', label: '容器名称', type: 'string', required: true },
+    { name: 'tail', label: '最多行数', type: 'integer', minimum: 1, maximum: 1000, default: 300, required: false },
+    { name: 'sinceMinutes', label: '最近分钟数', type: 'integer', minimum: 1, maximum: 1440, default: 15, required: false },
+  ] },
 ];
 function governanceReply(call, state) {
   if (call.name === 'ssh_permissions') return { content: [], structuredContent: { state: structuredClone(state), policy: { hostId: call.arguments.hostId, revision: 3, policy: policy() }, actions: catalog } };
@@ -461,6 +466,66 @@ test('rule preview uses draft values and named action parameters without executi
   assert.match(h.ids.get('preview-result').textContent, /需确认/);
   assert.match(h.ids.get('preview-result').textContent, /未授权|未生效/);
   assert.equal(h.calls.some(call => ['ssh_exec', 'ssh_run_action', 'ssh_test_connection'].includes(call.name)), false);
+});
+
+test('read-only log action requires confirmation and previews bounded numeric parameters', async () => {
+  const h = await harness(initial(), (call, state) => call.name === 'ssh_policy_preview'
+    ? { content: [], structuredContent: { state, evaluation: { decision: 'ask', reason: '容器日志需要批准', summary: '容器日志' }, granted: false } } : governanceReply(call, state));
+  await h.findAction('policy', 'prod').click(); await h.settle();
+  const decision = findData(h.ids.get('policy-actions'), 'actionId', 'container.logs');
+  assert.deepEqual(decision.children.map(child => child.value), ['ask', 'deny']);
+  assert.equal(decision.value, 'ask');
+  h.ids.get('preview-action').value = 'container.logs'; h.ids.get('preview-action').onchange();
+  const parameters = h.ids.get('preview-parameters');
+  findData(parameters, 'parameter', 'name').value = 'jenkins';
+  const tail = findData(parameters, 'parameter', 'tail'), since = findData(parameters, 'parameter', 'sinceMinutes');
+  assert.equal(tail.type, 'number'); assert.equal(tail.value, '300');
+  assert.equal(tail.min, '1'); assert.equal(tail.max, '1000'); assert.equal(tail.step, '1');
+  assert.equal(since.value, '15'); assert.equal(since.max, '1440');
+  assert.equal(tail.required, false, 'preview fields must not block saving policy');
+  tail.value = '500'; since.value = '60';
+  await h.ids.get('preview-run').click(); await h.settle();
+  const submitted = () => h.calls.filter(call => call.name === 'ssh_policy_preview').at(-1).arguments.operation;
+  assert.deepEqual(submitted(), { kind: 'action', actionId: 'container.logs', args: { name: 'jenkins', tail: 500, sinceMinutes: 60 } });
+  tail.value = ''; since.value = '';
+  await h.ids.get('preview-run').click(); await h.settle();
+  assert.deepEqual(submitted().args, { name: 'jenkins' }, 'blank optional numbers use server defaults');
+  assert.equal(h.calls.some(call => ['ssh_exec', 'ssh_run_action'].includes(call.name)), false);
+});
+
+test('invalid log preview bounds stop the preview request', async () => {
+  const h = await harness(initial(), governanceReply);
+  await h.findAction('policy', 'prod').click(); await h.settle();
+  h.ids.get('preview-action').value = 'container.logs'; h.ids.get('preview-action').onchange();
+  const parameters = h.ids.get('preview-parameters');
+  findData(parameters, 'parameter', 'name').value = 'jenkins';
+  for (const key of ['tail', 'sinceMinutes']) {
+    const input = findData(parameters, 'parameter', key);
+    input.value = '0';
+    let validityChecks = 0;
+    input.reportValidity = () => { validityChecks++; return false; };
+    await h.ids.get('preview-run').click(); await h.settle();
+    assert.equal(h.calls.some(call => call.name === 'ssh_policy_preview'), false, key);
+    assert.equal(validityChecks, 1, key + ' is validated before preview');
+    input.value = key === 'tail' ? '300' : '15'; input.reportValidity = () => true;
+  }
+});
+
+test('invalid preview bounds do not block saving policy settings', async () => {
+  const h = await harness(initial(), (call, state) => call.name === 'ssh_policy_save'
+    ? { content: [], structuredContent: { state, policy: { hostId: 'prod', revision: 4, policy: call.arguments.policy } } } : governanceReply(call, state));
+  await h.findAction('policy', 'prod').click(); await h.settle();
+  h.ids.get('preview-action').value = 'container.logs'; h.ids.get('preview-action').onchange();
+  const parameters = ['name', 'tail', 'sinceMinutes'].map(key => findData(h.ids.get('preview-parameters'), 'parameter', key));
+  parameters[1].value = '1001'; parameters[1].reportValidity = () => false;
+  // Model browser form ownership: an explicit empty form attribute detaches a control.
+  h.ids.get('policy-form').reportValidity = () => parameters.every(input => input.getAttribute('form') === '' || input.reportValidity());
+  h.ids.get('policy-timeout').value = '99';
+  await h.ids.get('policy-form').onsubmit({ preventDefault() {} }); await h.settle();
+  const saved = h.calls.find(call => call.name === 'ssh_policy_save');
+  assert.ok(saved, 'valid policy settings remain saveable despite an invalid preview');
+  assert.equal(saved.arguments.policy.timeoutSeconds, 99);
+  assert.equal(h.calls.some(call => call.name === 'ssh_policy_preview'), false);
 });
 
 test('raw command preview omits blank cwd to use the saved host default and preserves an override', async () => {

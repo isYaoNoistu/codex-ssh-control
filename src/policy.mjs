@@ -3,6 +3,11 @@ import { INFRASTRUCTURE_DEFAULTS } from './infrastructure-defaults.mjs';
 import { posix } from 'node:path';
 const decisions = new Set(['allow', 'ask', 'deny']);
 const nameParameter = Object.freeze({ name: 'name', label: '服务或容器名称', type: 'string', required: true });
+const logParameters = Object.freeze([
+  nameParameter,
+  Object.freeze({ name: 'tail', label: '最多返回行数', type: 'integer', minimum: 1, maximum: 1000, default: 300, required: false }),
+  Object.freeze({ name: 'sinceMinutes', label: '最近分钟数', type: 'integer', minimum: 1, maximum: 1440, default: 15, required: false }),
+]);
 const actionDefinitions = [
   ['connection.test', '测试连接', '验证账号、主机与系统', '诊断', false],
   ['system.summary', '系统概况', '查看主机名、系统版本与运行时间', '系统', false],
@@ -13,6 +18,7 @@ const actionDefinitions = [
   ['docker.containers', '容器列表', '查看容器名称、镜像、状态与端口', '容器', false],
   ['docker.stats', '容器资源', '查看容器 CPU、内存与网络统计', '容器', false],
   ['docker.disk', '容器磁盘', '查看 Docker 磁盘用量', '容器', false],
+  ['container.logs', '容器日志', '查看指定容器最近日志，每次执行必须确认', '容器', false, true, true],
   ['system.services', '系统服务', '查看服务运行状态', '服务', false],
   ['system.failed', '异常服务', '查看失败的系统服务', '服务', false],
   ['service.status', '服务状态', '查看指定服务状态，不读取环境配置或日志', '服务', false, true],
@@ -23,8 +29,8 @@ const actionDefinitions = [
   ['container.stop', '停止容器', '申请停止指定容器', '容器', true, true],
   ['container.restart', '重启容器', '申请重启指定容器', '容器', true, true],
 ];
-export const ACTION_CATALOG = Object.freeze(actionDefinitions.map(([id, label, description, category, mutating, named]) => Object.freeze({
-  id, label, description, category, mutating, defaultDecision: mutating ? 'ask' : 'allow', parameters: Object.freeze(named ? [nameParameter] : []),
+export const ACTION_CATALOG = Object.freeze(actionDefinitions.map(([id, label, description, category, mutating, named, approvalRequired = false]) => Object.freeze({
+  id, label, description, category, mutating, approvalRequired, defaultDecision: mutating || approvalRequired ? 'ask' : 'allow', parameters: id === 'container.logs' ? logParameters : Object.freeze(named ? [nameParameter] : []),
 })));
 const catalog = new Map(ACTION_CATALOG.map(action => [action.id, action]));
 function freeze(value) { for (const item of Object.values(value)) if (item && typeof item === 'object') freeze(item); return Object.freeze(value); }
@@ -83,6 +89,7 @@ export function validatePolicy(input) {
   for (const action of ACTION_CATALOG) {
     const decision = policy.actions[action.id];
     if (!decisions.has(decision) || (action.mutating && decision === 'allow')) throw new Error(action.label + '不允许自动执行修改操作');
+    if (action.approvalRequired && decision === 'allow') throw new Error(action.label + '必须由用户确认，不允许自动执行');
   }
   return {...policy,...validateInfrastructurePolicy(policy,catalog)};
 }
@@ -93,7 +100,14 @@ function actionArgs(actionId, args = {}) {
   if (!action.parameters.length) return {};
   if (typeof args.name !== 'string' || args.name.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9_.@-]*$/u.test(args.name)) throw new Error('名称只能包含字母、数字、点、下划线、@ 和短横线，且不能以选项符开头');
   if (actionId.startsWith('container.') && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/u.test(args.name)) throw new Error('容器名称无效');
-  return { name: args.name };
+  const normalized = { name: args.name };
+  for (const parameter of action.parameters) {
+    if (parameter.type !== 'integer') continue;
+    const value = args[parameter.name] === undefined ? parameter.default : args[parameter.name];
+    if (!Number.isInteger(value) || value < parameter.minimum || value > parameter.maximum) throw new Error(parameter.name + '必须为 ' + parameter.minimum + ' 到 ' + parameter.maximum + ' 的整数');
+    normalized[parameter.name] = value;
+  }
+  return normalized;
 }
 export function normalizeOperation(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('操作必须是对象');
@@ -170,6 +184,7 @@ export function buildActionCommand(actionId, input = {}) {
   let command = fixedCommands[actionId];
   if (actionId === 'service.status') command = '/usr/bin/systemctl --no-pager show --property=Id,LoadState,ActiveState,SubState,UnitFileState -- ' + quote(args.name);
   else if (actionId.startsWith('service.')) command = '/usr/bin/systemctl --no-pager ' + actionId.slice(8) + ' -- ' + quote(args.name);
+  else if (actionId === 'container.logs') command = docker + ' logs --since ' + quote(args.sinceMinutes * 60 + 's') + ' --tail ' + args.tail + ' --timestamps -- ' + quote(args.name);
   else if (actionId.startsWith('container.')) command = docker + ' ' + actionId.slice(10) + ' -- ' + quote(args.name);
   return environment + ' ' + command;
 }
@@ -202,7 +217,7 @@ function sensitiveCommand(command, cwd, blockedPaths) {
   const visible = command.replace(/["'\\]/gu, '');
   for (const token of visible.split(/[\s`;|&<>()]+/u).filter(Boolean)) {
     if (token.startsWith('-') || token.includes('=')) continue;
-    const path = token.startsWith('~') ? '/home/user' + token.slice(1) : token.startsWith('/') ? token : (cwd || '') + '/' + token;
+    const path = token.startsWith('~') ? '/home/user' + token.slice(1) : token.startsWith('/') ? token : (cwd === '/' ? '' : cwd || '') + '/' + token;
     if (isProtectedPath(path, blockedPaths)) return true;
   }
   return false;
@@ -244,6 +259,6 @@ export function evaluateOperation(inputPolicy, inputOperation) {
   const matchingRules = equivalents.map(value => ruleDecision(policy, value));
   const actionRule = matchingRules.includes('deny') ? 'deny' : matchingRules.includes('ask') ? 'ask' : null;
   if (policy.actions[action.actionId] === 'deny' || actionRule === 'deny') return result('deny', 'ACTION_DENIED', '当前策略禁止此操作');
-  const decision = info.mutating || policy.actions[action.actionId] === 'ask' || supplement === 'ask' || actionRule === 'ask' ? 'ask' : 'allow';
+  const decision = info.mutating || info.approvalRequired || policy.actions[action.actionId] === 'ask' || supplement === 'ask' || actionRule === 'ask' ? 'ask' : 'allow';
   return result(decision, decision === 'ask' ? 'ACTION_REQUIRES_APPROVAL' : 'ACTION_ALLOWED', decision === 'ask' ? '此操作必须由用户确认' : '允许内置非敏感诊断操作', { command });
 }
