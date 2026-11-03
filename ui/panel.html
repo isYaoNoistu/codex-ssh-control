@@ -5,40 +5,288 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SSH 主机</title>
 <style>
-:root{color-scheme:light dark;font-family:"Segoe UI Variable Text","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:13px;--bg:var(--color-background-primary,#fff);--surface:var(--color-background-secondary,#f6f7f7);--fg:var(--color-text-primary,#202624);--muted:var(--color-text-secondary,#737c77);--line:var(--color-border-primary,#e4e8e5);--accent:#23785e;--accent-soft:#ecf5f0;--danger:#b9433e;--danger-soft:#fff2f0;--radius:10px}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--fg);line-height:1.5}button,input,select{font:inherit}button{cursor:pointer;touch-action:manipulation}button:disabled{cursor:default;opacity:.43}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button{border:1px solid var(--line);color:var(--fg);background:var(--bg);border-radius:7px;padding:6px 10px;transition:background .14s,border-color .14s}button:hover:not(:disabled){background:var(--surface);border-color:#9daea4}.primary{background:var(--accent);border-color:var(--accent);color:#fff}.primary:hover:not(:disabled){background:#1b624c;border-color:#1b624c}.quiet{border-color:transparent;color:var(--muted);background:transparent}.danger{color:var(--danger)}.small{font-size:12px;padding:4px 8px}.shell{max-width:900px;margin:auto;padding:22px 20px 28px}.topbar{display:flex;align-items:flex-start;gap:10px;justify-content:space-between;margin-bottom:23px}h1{font-weight:650;font-size:20px;letter-spacing:-.03em;margin:0}.subtitle{color:var(--muted);font-size:12px;margin:4px 0 0}.refresh{width:32px;height:32px;display:grid;place-items:center;padding:0}.refresh svg{width:16px;height:16px}.statusline{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:7px}.status-dot{width:5px;height:5px;border-radius:50%;background:#a5aea8}.status-dot.ready{background:#3b9673}.grant-block{border-top:2px solid var(--accent);padding:15px 0 20px}.section-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:650}.count{background:var(--accent-soft);color:var(--accent);min-width:23px;padding:1px 7px;border-radius:5px;text-align:center;font-variant-numeric:tabular-nums}.thread{margin-left:auto;color:var(--muted);font-family:Consolas,"SFMono-Regular",monospace;font-size:10px;font-weight:400}.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.chip{display:flex;align-items:center;gap:7px;border:1px solid #bad9c9;background:var(--accent-soft);color:var(--accent);padding:4px 5px 4px 9px;border-radius:7px;font-size:12px}.chip.inactive{color:var(--muted);background:var(--surface);border-color:var(--line)}.chip button{border:0;border-radius:4px;padding:0;width:20px;height:20px;background:transparent;color:inherit;font-size:17px;line-height:1}.grant-empty{color:var(--muted);font-size:12px;margin:12px 0 0}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 0 10px;border-top:1px solid var(--line)}h2{font-size:13px;margin:0;font-weight:650}.host-list{border-bottom:1px solid var(--line)}.host-row{padding:15px 0;border-top:1px solid var(--line)}.host-row:first-child{border-top:0}.host-heading{display:flex;align-items:center;gap:10px}.host-symbol{width:29px;height:29px;display:grid;place-items:center;border:1px solid var(--line);border-radius:7px;color:var(--muted);font:12px Consolas,monospace;flex:none}.host-name{font-size:13px;font-weight:600;overflow-wrap:anywhere}.host-id{font-family:Consolas,"SFMono-Regular",monospace;color:var(--muted);font-size:10px}.host-heading-text{flex:1;min-width:0}.switch{width:29px;height:17px;padding:2px;border:0;border-radius:20px;background:#c3cac6;position:relative;flex:none}.switch::after{content:"";display:block;border-radius:50%;background:white;width:13px;height:13px;box-shadow:0 1px 2px #0002;transition:transform .14s}.switch[aria-checked=true]{background:var(--accent)}.switch[aria-checked=true]::after{transform:translateX(12px)}.switch:hover:not(:disabled){background:#a3afa8}.switch[aria-checked=true]:hover:not(:disabled){background:#1b624c}.host-address{font:11px/1.65 Consolas,"SFMono-Regular",monospace;color:var(--muted);margin:9px 0 10px 39px;overflow-wrap:anywhere}.host-actions{margin-left:39px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}.host-actions .access{margin-right:auto}.hint{font-size:11px;color:var(--muted);line-height:1.7}.empty{padding:27px 14px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:var(--radius);margin:8px 0 14px}.empty-mark{font:23px Consolas,monospace;color:#9baa9f;margin-bottom:7px}.empty strong{display:block;color:var(--fg);font-size:13px;font-weight:550;margin-bottom:5px}.banner{padding:11px 12px;background:var(--danger-soft);border:1px solid #e9c9c4;border-radius:8px;display:flex;align-items:flex-start;gap:9px;margin:12px 0;font-size:12px;color:var(--danger)}.banner span{flex:1;overflow-wrap:anywhere}.banner button{padding:0 3px;border:0;color:inherit;background:transparent}.identity-notice{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--muted);font-size:12px;margin-bottom:12px}.editor{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:11px 0 17px}.editor-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:5px;font-size:12px;min-width:0}.wide{grid-column:1/-1}.field label{font-weight:500}.optional{font-size:10px;font-weight:400;color:var(--muted);margin-left:4px}.field input,.field select{width:100%;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);outline-offset:1px}.field input:disabled{color:var(--muted);background:transparent}.field .hint{margin:0}.connection-group{display:contents}.checkbox{display:flex;align-items:flex-start;gap:8px;margin:14px 0;font-size:12px}.checkbox input{margin-top:3px;accent-color:var(--accent)}.form-actions{display:flex;gap:8px;justify-content:flex-end;padding-top:4px}.editor-warning{margin:12px 0 0;font-size:11px;color:var(--muted)}.delete-box{border:1px solid #e8bcb5;background:var(--danger-soft);border-radius:8px;padding:14px;margin:12px 0}.delete-box p{font-size:12px;margin:6px 0 12px;overflow-wrap:anywhere}.delete-actions{display:flex;justify-content:flex-end;gap:8px}.shortcut{margin-top:18px;padding:0 1px}.shortcut code{font-family:Consolas,"SFMono-Regular",monospace;color:var(--fg);font-size:11px;white-space:normal;overflow-wrap:anywhere}.shortcut p{margin:5px 0}.sync-note{color:var(--muted);font-size:10px;min-height:15px;margin-top:14px}::selection{background:#bde4d2}@media(prefers-color-scheme:dark){:root{--bg:var(--color-background-primary,#202321);--surface:var(--color-background-secondary,#282d29);--fg:var(--color-text-primary,#e7ece8);--muted:var(--color-text-secondary,#a1ada4);--line:var(--color-border-primary,#3a433d);--accent:#77c6a5;--accent-soft:#253b30;--danger:#efa097;--danger-soft:#402b2a}.primary{color:#15271e}.primary:hover:not(:disabled){background:#94d5b9;border-color:#94d5b9}.chip{border-color:#3e6754}.switch[aria-checked=true]{background:#52a381}.switch[aria-checked=true]:hover:not(:disabled){background:#67b493}.banner,.delete-box{border-color:#70453f}}@media(max-width:360px){.shell{padding:16px 13px 22px}.form-grid{grid-template-columns:1fr}.field{grid-column:1/-1}.host-address,.host-actions{margin-left:0}.thread{max-width:110px;overflow:hidden;text-overflow:ellipsis}.host-actions{gap:3px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
-.connection-test{margin:12px 0 0 39px;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:12px;overflow-wrap:anywhere}.connection-test[data-status=success]{border-color:var(--accent);background:var(--accent-soft)}.connection-test[data-status=failure]{border-color:var(--danger);background:var(--danger-soft)}.connection-test-title{font-size:12px;font-weight:600}.connection-test[data-status=success] .connection-test-title{color:var(--accent)}.connection-test[data-status=failure] .connection-test-title{color:var(--danger)}.connection-test-message{margin:5px 0 0}.connection-test-meta{color:var(--muted);font-size:10px;margin-top:8px}.connection-test details{margin-top:9px}.connection-test summary{cursor:pointer;color:var(--muted);font-size:11px}.connection-test pre{margin:6px 0 0;font:11px/1.6 Consolas,"SFMono-Regular",monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto}.connection-test-output-label{margin-top:9px;font-size:10px;color:var(--muted)}@media(max-width:360px){.connection-test{margin-left:0}}
-.shell{max-width:600px}.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 18px;padding-bottom:7px}.tabs button{border-color:transparent;background:transparent;padding:7px 10px;color:var(--muted);white-space:nowrap}.tabs button[aria-selected=true]{background:var(--accent-soft);color:var(--accent);font-weight:650}.tabs .count{font-size:10px;margin-left:3px}.grant-options{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:var(--muted)}.grant-options select{padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}.host-policy-summary{margin:5px 0 10px 39px;font-size:11px;color:var(--muted);overflow-wrap:anywhere}.host-policy-summary.expired{color:var(--danger)}textarea{font:inherit;resize:vertical}.field textarea{width:100%;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font-family:Consolas,"SFMono-Regular",monospace;font-size:12px}textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.policy-editor{padding:14px}.policy-editor .editor-title{align-items:flex-start}.policy-editor .editor-title p{margin:4px 0 0}.policy-section{border-top:1px solid var(--line);padding:13px 0}.policy-section .section-heading{padding:0;border:0}.policy-section>summary{cursor:pointer;font-weight:600;padding-right:12px}.policy-section[open]>summary{margin-bottom:13px}.policy-section .field{margin-top:9px}.rule-list{display:grid;gap:9px;margin:10px 0}.rule-row{padding:11px;border:1px solid var(--line);background:var(--bg);border-radius:8px;min-width:0}.rule-row .field{margin-top:0}.rule-row .checkbox{margin:0}.row-options{display:flex;align-items:center;gap:15px;flex-wrap:wrap;margin-top:9px}.row-options .remove-row{margin-left:auto}.row-options .field{flex:1;min-width:100px}.protection-note{padding:10px 12px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:12px}.warning-note{font-size:11px;line-height:1.75;color:var(--danger);margin:11px 0}.action-rule{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}.action-rule>div{flex:1;min-width:0}.action-rule select{flex:none;width:96px;max-width:40%;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}.action-rule .hint{margin:3px 0 0}.action-category{margin:14px 0 2px;font-size:11px;color:var(--muted);font-weight:600}.limits-grid{padding-top:5px}.policy-footer{border-top:1px solid var(--line);padding-top:2px}.preview-run{margin-top:12px}.result-box{border:1px solid var(--line);border-radius:8px;padding:11px 12px;margin-top:10px;font-size:12px;overflow-wrap:anywhere}.result-box[data-decision=deny]{background:var(--danger-soft);border-color:var(--danger)}.result-box[data-decision=allow]{background:var(--accent-soft);border-color:var(--accent)}.filter-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin:16px 0}.event-list{display:grid;gap:11px}.event-card{border:1px solid var(--line);border-radius:9px;padding:13px;min-width:0}.event-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.event-title{font-weight:600;overflow-wrap:anywhere;min-width:0}.event-badge{font-size:10px;padding:2px 7px;border:1px solid var(--line);border-radius:5px;white-space:nowrap}.event-card p{margin:8px 0;font-size:12px;overflow-wrap:anywhere}.event-meta{font-size:10px;color:var(--muted);overflow-wrap:anywhere;margin:7px 0}.event-card details{margin-top:10px}.event-card summary{font-size:11px;cursor:pointer;color:var(--muted)}.event-card pre{font:11px/1.6 Consolas,"SFMono-Regular",monospace;background:var(--surface);padding:9px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;margin:7px 0}.event-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}.event-note{color:var(--accent);font-size:11px!important}.loading-note{padding:14px 0;color:var(--muted);font-size:12px}#audit-more{margin-top:13px}@media(max-width:400px){.shell{padding:16px 12px}.tabs button{padding:7px 8px}.host-address,.host-actions,.host-policy-summary{margin-left:0}.policy-editor{padding:12px}.form-grid{grid-template-columns:1fr}.field{grid-column:1/-1}.row-options{gap:10px}.filter-grid{gap:8px}.event-card{padding:11px}.policy-footer .form-actions{flex-wrap:wrap}.policy-footer .form-actions button{flex:1}.thread{max-width:100px;overflow:hidden;text-overflow:ellipsis}}
-
-.host-detail{padding-top:2px}.detail-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 15px}.detail-toolbar .quiet{padding-left:0}.detail-header{border-bottom:1px solid var(--line);padding-bottom:14px}.detail-header h2{font-size:19px;letter-spacing:-.02em;overflow-wrap:anywhere}.detail-header p{margin:5px 0}.detail-header .host-policy-summary{margin:6px 0 0}.draft-note{color:var(--muted);font-size:11px}.detail-tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:13px 0 18px}.detail-tabs button{border:0;border-radius:0;background:transparent;padding:8px 1px 10px;color:var(--muted);border-bottom:2px solid transparent}.detail-tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);font-weight:650}.host-pane{padding:0;margin:0;border:0;background:transparent}.host-pane .form-actions{margin-top:12px}.host-pane .policy-section:first-of-type{margin-top:16px}.history-purpose{margin:18px 0;padding:12px 14px;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:0 7px 7px 0}.history-purpose h3,.history-block h3{font-size:12px;margin:0 0 8px;font-weight:600}.history-purpose p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.history-metadata{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:11px;line-height:1.9;padding-bottom:14px;border-bottom:1px solid var(--line)}.history-block{margin:20px 0}.history-block pre{font:11px/1.7 Consolas,"SFMono-Regular",monospace;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;max-height:360px;overflow:auto;margin:0}#history-more{margin-top:13px}#history-detail-content>.event-top{align-items:center}#history-detail-content .event-title{font-size:16px;line-height:1.5}#discard-confirmation p{margin:0 0 10px}@media(max-width:400px){.detail-header h2{font-size:18px}.host-pane .form-actions{flex-wrap:wrap}.host-pane .form-actions button{flex:1}.detail-toolbar{gap:6px}.history-purpose{padding:11px}.history-block pre{padding:10px}}
-.key-fingerprint{font:11px/1.8 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.infrastructure-tools{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.infrastructure-progress{width:100%;accent-color:var(--accent)}.action-rule{flex-wrap:wrap}.action-rule .argument-rule{flex-basis:100%}.connection-subsection{margin:13px 0}.connection-subsection h3{font-size:12px}.infrastructure-list{margin-top:12px}#infrastructure-detail pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;font:11px/1.7 Consolas,monospace}
+/* Host tokens take precedence; fallbacks also work in an isolated preview. */
+:root {
+  color-scheme: light dark;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif);
+  font-size: var(--font-text-md-size, 14px);
+  --fallback-bg: #fff; --fallback-surface: #f7f7f8; --fallback-hover: #efeff0;
+  --fallback-fg: #171717; --fallback-muted: #6b6b6b; --fallback-line: #e8e8e8;
+  --fallback-danger: #b42318; --fallback-danger-bg: #fff4f2; --fallback-success: #23815a;
+  --bg: var(--color-background-primary, var(--fallback-bg));
+  --surface: var(--color-background-secondary, var(--fallback-surface));
+  --hover: var(--color-background-tertiary, var(--fallback-hover));
+  --fg: var(--color-text-primary, var(--fallback-fg));
+  --muted: var(--color-text-secondary, var(--fallback-muted));
+  --line: var(--color-border-primary, var(--fallback-line));
+  --danger: var(--color-text-danger, var(--fallback-danger));
+  --danger-soft: var(--color-background-danger, var(--fallback-danger-bg));
+  --success: var(--color-text-success, var(--fallback-success));
+  --accent: var(--fg); --accent-soft: var(--surface);
+  --radius: var(--border-radius-lg, 12px); --control-radius: var(--border-radius-md, 8px);
+  --mono: var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fallback-bg: #181818; --fallback-surface: #222; --fallback-hover: #2c2c2c;
+    --fallback-fg: #ededed; --fallback-muted: #a3a3a3; --fallback-line: #333;
+    --fallback-danger: #ffaaa3; --fallback-danger-bg: #332321; --fallback-success: #75c99d;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fallback-bg: #181818; --fallback-surface: #222; --fallback-hover: #2c2c2c;
+  --fallback-fg: #ededed; --fallback-muted: #a3a3a3; --fallback-line: #333;
+  --fallback-danger: #ffaaa3; --fallback-danger-bg: #332321; --fallback-success: #75c99d;
+}
+:root[data-theme="light"] { color-scheme: light; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; }
+button, summary { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button { min-height: 32px; padding: 5px 12px; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--bg); color: var(--fg); cursor: pointer; font-size: 13px; font-weight: 500; transition: background .12s; }
+button:hover:not(:disabled) { background: var(--hover); }
+button:disabled { cursor: default; opacity: .4; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--color-ring-primary, var(--fg)); outline-offset: 3px; }
+.primary { background: var(--fg); color: var(--bg); border-color: transparent; }
+.primary:hover:not(:disabled) { background: var(--fg); opacity: .85; }
+.quiet { background: transparent; border-color: transparent; color: var(--muted); }
+.quiet:hover:not(:disabled) { color: var(--fg); }
+.danger { color: var(--danger); }
+.quiet.danger:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
+.small { font-size: 12px; min-height: 30px; padding: 4px 10px; }
+input, select, textarea { accent-color: var(--fg); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: .75; }
+textarea { resize: vertical; }
+summary { cursor: pointer; }
+summary::marker { color: var(--muted); }
+code, pre { font-family: var(--mono); }
+.shell { max-width: 760px; margin: 0 auto; padding: 24px; }
+h1, h2, h3, p { overflow-wrap: anywhere; }
+h1 { margin: 0; font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px; }
+h2 { margin: 0; font-size: 14px; line-height: 1.5; font-weight: 600; }
+h3 { font-size: 13px; font-weight: 600; }
+.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+.subtitle { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.refresh { width: 32px; flex: none; padding: 7px; border-color: transparent; background: transparent; }
+.refresh svg { width: 16px; height: 16px; display: block; }
+.statusline { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11px; color: var(--muted); }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.status-dot.ready { background: var(--success); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 24px; }
+.tabs button { background: transparent; color: var(--muted); border-color: transparent; padding: 6px 12px; }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--fg); font-weight: 600; }
+.grant-block { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); margin-bottom: 24px; }
+.section-label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.section-label h2 { font-size: 13px; }
+.count { background: var(--bg); color: var(--muted); min-width: 22px; padding: 1px 6px; border-radius: 6px; text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; }
+.thread { margin-left: auto; color: var(--muted); font: 10px var(--mono); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chips:empty { margin: 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 5px 4px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); font-size: 12px; }
+.chip>span { overflow-wrap: anywhere; min-width: 0; }
+.chip.inactive { color: var(--muted); }
+.chip button { min-height: 24px; width: 24px; flex: none; border: 0; background: transparent; padding: 0; color: var(--muted); font-size: 17px; line-height: 1; }
+.grant-empty { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.grant-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; font-size: 12px; }
+.grant-options select { margin-left: auto; padding: 4px 8px; min-height: 30px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: var(--control-radius); }
+.grant-options>span { width: 100%; color: var(--muted); font-size: 11px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.host-list { margin-bottom: 20px; }
+.host-row { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.host-heading { display: flex; align-items: center; gap: 12px; }
+.host-symbol { width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center; background: var(--surface); color: var(--muted); font: 13px var(--mono); }
+.host-heading-text { flex: 1; min-width: 0; }
+.host-name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.host-id { font: 11px/1.6 var(--mono); color: var(--muted); }
+.switch { width: 32px; height: 20px; min-height: 20px; flex: none; padding: 3px; border: 0; border-radius: 20px; background: var(--hover); box-shadow: inset 0 0 0 1px var(--line); }
+.switch::after { content: ""; display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 3px #0002; transition: transform .12s; }
+.switch[aria-checked="true"] { background: var(--fg); box-shadow: none; }
+.switch[aria-checked="true"]::after { transform: translateX(12px); }
+.switch[aria-checked="true"]:hover:not(:disabled) { background: var(--fg); opacity: .85; }
+.host-address { margin: 10px 0 5px 46px; color: var(--muted); font: 11px/1.7 var(--mono); overflow-wrap: anywhere; }
+.host-policy-summary { margin: 0 0 12px 46px; color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.host-policy-summary.expired { color: var(--danger); }
+.host-actions { margin-left: 46px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.host-actions .access { margin-right: auto; }
+.host-more { margin: 8px 0 0 46px; font-size: 12px; }
+.host-more>summary { width: fit-content; padding: 5px 0; color: var(--muted); font-size: 11px; }
+.host-more>summary:hover { color: var(--fg); }
+.host-more>summary[aria-disabled="true"] { opacity: .4; cursor: default; }
+.host-more-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 0; }
+.host-more-actions .danger { margin-left: auto; }
+.hint { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.empty { margin: 16px 0; padding: 32px 18px; text-align: center; color: var(--muted); font-size: 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.empty-mark { width: 40px; height: 40px; margin: 0 auto 12px; display: grid; place-items: center; border-radius: 12px; background: var(--surface); color: var(--muted); font: 16px var(--mono); }
+.empty strong { display: block; font-size: 14px; font-weight: 600; color: var(--fg); margin-bottom: 5px; }
+.banner { display: flex; align-items: flex-start; gap: 10px; background: var(--danger-soft); color: var(--danger); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 0 0 16px; font-size: 12px; }
+.banner span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.banner button { border: 0; background: transparent; color: inherit; padding: 0; min-height: 20px; width: 20px; }
+.identity-notice { padding: 12px 14px; margin-bottom: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 12px; }
+.delete-box { background: var(--danger-soft); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 12px 0; }
+.delete-box p { margin: 8px 0 16px; font-size: 12px; }
+.delete-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.shortcut { margin-top: 24px; color: var(--muted); font-size: 12px; }
+.shortcut>summary { font-weight: 500; }
+.shortcut p { margin: 8px 0 0; }
+.shortcut code { font: 11px/1.7 var(--mono); color: var(--fg); overflow-wrap: anywhere; white-space: normal; }
+.sync-note { min-height: 16px; margin-top: 26px; color: var(--muted); font-size: 11px; }
+.detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 18px; }
+.detail-toolbar .quiet { padding-left: 0; }
+.draft-note { font-size: 11px; color: var(--muted); }
+.detail-header { margin-bottom: 16px; }
+.detail-header h2 { font-size: 18px; letter-spacing: -.2px; }
+.detail-header p { margin: 4px 0; }
+.detail-header .host-policy-summary { margin: 4px 0 0; }
+.detail-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--line); margin: 0 0 24px; }
+.detail-tabs button { padding: 8px 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); background: transparent; }
+.detail-tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+.host-pane { padding: 0; margin: 0; border: 0; }
+.settings-group { padding: 0 0 24px; margin: 0; border: 0; }
+.settings-group>h3 { margin: 0 0 16px; }
+.form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-size: 12px; }
+.field label, .field>span:first-child { font-weight: 500; }
+.wide { grid-column: 1 / -1; }
+.optional { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+.field input, .field select, .field textarea { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--bg); color: var(--fg); outline-offset: 2px; font-size: 13px; line-height: 1.5; }
+.field input:disabled { color: var(--muted); background: var(--surface); }
+.field textarea { font-family: var(--mono); font-size: 12px; }
+.field .hint { margin: 0; font-size: 11px; }
+.connection-group { display: contents; }
+.checkbox { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0; font-size: 12px; }
+.checkbox input { width: 15px; height: 15px; flex: none; margin: 2px 0 0; }
+.form-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.editor-warning { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+.policy-section { border-top: 1px solid var(--line); padding: 20px 0; }
+.policy-section .section-heading { margin-bottom: 8px; }
+.policy-section>.hint { margin: 6px 0 16px; font-size: 11px; }
+.policy-section>summary { font-size: 13px; font-weight: 500; list-style: none; position: relative; padding-right: 24px; }
+.policy-section>summary::-webkit-details-marker { display: none; }
+.policy-section>summary::after { content: ""; position: absolute; right: 4px; top: 7px; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); }
+.policy-section[open]>summary::after { transform: rotate(45deg); top: 5px; }
+.policy-section[open]>summary { margin-bottom: 18px; }
+.policy-section .field { margin-top: 10px; }
+.rule-list { display: grid; gap: 12px; margin: 12px 0; }
+.rule-row { padding: 14px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.rule-row .field { margin-top: 0; }
+.rule-row .checkbox { margin: 0; }
+.row-options { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 12px; }
+.row-options .remove-row { margin-left: auto; }
+.row-options .field { flex: 1; min-width: 100px; }
+.protection-note { padding: 14px 16px; margin: 12px 0 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 12px; line-height: 1.7; }
+.protection-note .hint { display: block; margin-top: 5px; font-size: 11px; }
+.warning-note { font-size: 12px; line-height: 1.7; color: var(--danger); margin: 12px 0; }
+.action-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.action-rule>div { flex: 1; min-width: 0; font-size: 13px; }
+.action-rule select { width: 108px; max-width: 45%; flex: none; padding: 7px 8px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: var(--control-radius); font-size: 12px; }
+.action-rule .hint { margin: 4px 0 0; font-size: 11px; }
+.action-rule .argument-rule { flex-basis: 100%; }
+.action-category { margin: 22px 0 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
+.limits-grid { padding-top: 4px; }
+.policy-footer { border-top: 1px solid var(--line); padding-top: 8px; }
+.policy-footer .form-actions { border-top: 0; padding-top: 0; }
+.preview-run { margin-top: 16px; }
+.result-box { padding: 14px; margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.result-box[data-decision="deny"] { background: var(--danger-soft); color: var(--danger); }
+.result-box[data-decision="allow"] { border-left: 3px solid var(--success); }
+.filter-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; margin: 20px 0 12px; }
+.event-list { display: grid; gap: 0; }
+.event-card { padding: 18px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.event-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.event-title { font-size: 13px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.event-badge { flex: none; font-size: 10px; padding: 3px 7px; border-radius: 6px; color: var(--muted); background: var(--surface); white-space: nowrap; }
+.event-card p { margin: 8px 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.event-meta { margin: 7px 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.event-card details { margin-top: 10px; }
+.event-card summary { font-size: 11px; color: var(--muted); }
+.event-card pre { margin: 8px 0 0; padding: 12px; border-radius: 8px; background: var(--surface); font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 300px; }
+.event-card>button { margin-top: 5px; }
+.event-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.event-note { font-size: 11px !important; color: var(--muted); }
+.loading-note { color: var(--muted); font-size: 12px; padding: 16px 0; }
+#audit-more, #history-more { margin-top: 16px; }
+#history-view>.field { display: grid; grid-template-columns: auto minmax(0, 200px); align-items: center; justify-content: space-between; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.history-purpose { margin: 20px 0; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.history-purpose h3, .history-block h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
+.history-purpose p { font-size: 13px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-metadata { color: var(--muted); font-size: 12px; line-height: 1.9; padding-bottom: 20px; border-bottom: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-block { margin: 22px 0; }
+.history-block pre { margin: 0; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font: 12px/1.75 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
+#history-detail-content>.event-top { align-items: center; }
+#history-detail-content .event-title { font-size: 16px; }
+#discard-confirmation p { margin: 0 0 12px; }
+#discard-confirmation .form-actions { border: 0; margin: 0; padding: 0; }
+.connection-test { margin: 14px 0 0 46px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.connection-test-title { font-size: 12px; font-weight: 600; }
+.connection-test[data-status="success"] .connection-test-title { color: var(--success); }
+.connection-test[data-status="failure"] { background: var(--danger-soft); }
+.connection-test[data-status="failure"] .connection-test-title { color: var(--danger); }
+.connection-test-message { margin: 5px 0 0; }
+.connection-test-meta { color: var(--muted); font-size: 11px; margin-top: 8px; }
+.connection-test details { margin-top: 12px; }
+.connection-test summary { color: var(--muted); font-size: 11px; }
+.connection-test pre { margin: 8px 0 0; font: 11px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
+.connection-test-output-label { margin-top: 12px; font-size: 11px; color: var(--muted); }
+.key-fingerprint { font: 11px/1.8 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.infrastructure-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.infrastructure-progress { width: 100%; accent-color: var(--fg); }
+.connection-subsection { margin: 16px 0; }
+.connection-subsection h3 { font-size: 13px; }
+.infrastructure-list { margin-top: 12px; }
+#infrastructure-detail pre { padding: 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font: 12px/1.7 var(--mono); }
+@media (max-width: 440px) {
+  .shell { padding: 20px 16px; }
+  .topbar { margin-bottom: 18px; }
+  .tabs { margin-bottom: 20px; }
+  .tabs button { padding: 6px 10px; }
+  .grant-block { padding: 14px; }
+  .host-address, .host-actions, .host-policy-summary, .host-more, .connection-test { margin-left: 0; }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .field { grid-column: 1 / -1; }
+  .form-actions button { flex: 1; }
+  .filter-grid { gap: 10px; }
+  .filter-grid>.field { grid-column: auto; }
+  .row-options { gap: 10px; }
+  .history-purpose, .history-block pre { padding: 12px; }
+  #history-view>.field { grid-template-columns: auto minmax(0, 180px); }
+  .thread { max-width: 96px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; scroll-behavior: auto !important; } }
+@media (forced-colors: active) { button, input, select, textarea, .switch { border: 1px solid ButtonText; } .switch[aria-checked="true"] { background: Highlight; } .switch::after { background: ButtonText; } }
 </style>
 </head>
 <body><main class="shell">
-  <header class="topbar"><div><h1>SSH 主机</h1><p class="subtitle">为当前聊天选择可操作的服务器</p><div class="statusline"><span id="status-dot" class="status-dot"></span><span id="connection-status" role="status">正在连接…</span></div></div><button id="refresh" class="refresh" type="button" title="刷新主机与授权" aria-label="刷新主机与授权" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/></svg></button></header>
+  <header class="topbar"><div><h1>SSH 主机</h1><p class="subtitle">管理主机、访问权限和执行记录</p><div class="statusline"><span id="status-dot" class="status-dot"></span><span id="connection-status" role="status">正在连接…</span></div></div><button id="refresh" class="refresh" type="button" title="刷新主机与授权" aria-label="刷新主机与授权" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/></svg></button></header>
   <div id="error-banner" class="banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="关闭提示">×</button></div>
   <div id="identity-notice" class="identity-notice" hidden>正在确认当前聊天，暂时无法更改主机与授权。</div>
   <nav class="tabs" role="tablist" aria-label="SSH 管理"><button id="tab-hosts" type="button" role="tab" aria-controls="hosts-view" aria-selected="true">主机</button><button id="tab-audit" type="button" role="tab" aria-controls="audit-view" aria-selected="false">审计</button><button id="tab-history" type="button" role="tab" aria-controls="history-view" aria-selected="false">执行历史</button></nav>
   <div id="hosts-view" role="tabpanel" aria-labelledby="tab-hosts">
   <div id="host-list-view">
-  <section class="grant-block" aria-labelledby="grant-title"><div class="section-label"><h2 id="grant-title">当前聊天可控制</h2><span id="grant-count" class="count">0</span><span id="thread-label" class="thread" title="当前聊天">—</span></div><div id="grant-chips" class="chips"></div><p id="grant-empty" class="grant-empty">尚未授权主机。可在下方逐台添加，多台主机可同时授权。</p><div class="grant-options"><label for="grant-minutes">本次授权时长</label><select id="grant-minutes"><option value="15">15 分钟</option><option value="60" selected>1 小时</option><option value="240">4 小时</option><option value="1440">24 小时</option></select><span>以主机设置的上限为准</span></div></section>
-  <section aria-labelledby="catalog-title"><div class="section-heading"><h2 id="catalog-title">主机目录</h2><button id="add-host" type="button" class="small" disabled>＋ 添加主机</button></div>
+  <section class="grant-block" aria-labelledby="grant-title"><div class="section-label"><h2 id="grant-title">当前聊天授权</h2><span id="grant-count" class="count">0</span><span id="thread-label" class="thread" title="当前聊天">—</span></div><div id="grant-chips" class="chips"></div><p id="grant-empty" class="grant-empty">尚未授权主机。在下方选择主机，即可授权给当前聊天。</p><div class="grant-options"><label for="grant-minutes">本次授权时长</label><select id="grant-minutes"><option value="15">15 分钟</option><option value="60" selected>1 小时</option><option value="240">4 小时</option><option value="1440">24 小时</option></select><span>以主机设置的上限为准</span></div></section>
+  <section aria-labelledby="catalog-title"><div class="section-heading"><h2 id="catalog-title">已配置的主机</h2><button id="add-host" type="button" class="small" disabled>＋ 添加主机</button></div>
     <section id="delete-confirmation" class="delete-box" hidden role="alertdialog" aria-labelledby="delete-title"><h2 id="delete-title">删除主机</h2><p id="delete-description"></p><div class="delete-actions"><button id="cancel-delete" type="button">取消</button><button id="confirm-delete" type="button" class="danger">确认删除</button></div></section>
     <div id="empty-catalog" class="empty" hidden><div class="empty-mark" aria-hidden="true">&gt;_</div><strong>还没有配置主机</strong><span class="hint">添加服务器地址，或复用本机 SSH 主机别名。</span></div>
     <div id="host-list" class="host-list"></div>
   </section>
-  <aside class="shortcut"><h2>在聊天中授权</h2><p class="hint">发送 <code id="shortcut-help">/ssh-主机标识</code>，可一次指定多台。新聊天需要重新授权。</p></aside>
+  <details class="shortcut"><summary>在聊天中使用快捷指令</summary><p class="hint">发送 <code id="shortcut-help">/ssh-主机标识</code>，可一次指定多台。新聊天需要重新授权。</p></details>
   </div>
   <section id="host-detail-view" class="host-detail" hidden aria-labelledby="detail-title"><div class="detail-toolbar"><button id="detail-back" type="button" class="quiet small">← 返回主机列表</button><span id="detail-dirty" class="draft-note" hidden>有未保存修改</span></div><header class="detail-header"><h2 id="detail-title">主机设置</h2><p id="detail-address" class="hint"></p><div id="detail-status"></div></header><div id="discard-confirmation" class="identity-notice" hidden role="alert"><p>连接或权限设置尚未保存。返回列表将放弃这些修改。</p><div class="form-actions"><button id="keep-editing" type="button">继续编辑</button><button id="discard-detail" type="button" class="danger">放弃修改并返回</button></div></div><nav class="detail-tabs" role="tablist" aria-label="主机设置"><button id="detail-tab-connection" type="button" role="tab" aria-controls="editor" aria-selected="true">连接设置</button><button id="detail-tab-policy" type="button" role="tab" aria-controls="policy-editor" aria-selected="false">权限设置</button></nav><p id="policy-loading" class="loading-note" hidden>正在读取权限设置…</p>
     <section id="editor" class="host-pane" role="tabpanel" hidden aria-labelledby="detail-tab-connection">
-      <form id="host-form"><div class="form-grid">
+      <form id="host-form"><section class="settings-group"><h3>基本信息</h3><div class="form-grid">
         <div class="field"><label for="host-id">主机标识</label><input id="host-id" type="text" required maxlength="48" pattern="[a-z][a-z0-9-]{0,47}" autocomplete="off" spellcheck="false" placeholder="prod"><p class="hint">小写字母、数字、短横线</p></div>
         <div class="field"><label for="host-name">显示名称<span class="optional">可选</span></label><input id="host-name" type="text" maxlength="80" placeholder="生产服务器" autocomplete="off"></div>
+      </div></section>
+      <section class="settings-group"><h3>连接信息</h3><div class="form-grid">
         <div class="field wide"><label for="host-mode">连接方式</label><select id="host-mode"><option value="hostname">填写地址和用户名</option><option value="alias">使用 SSH 配置中的别名</option></select></div>
         <div id="hostname-fields" class="connection-group"><div class="field wide"><label for="host-hostname">服务器地址</label><input id="host-hostname" type="text" placeholder="192.168.1.10 或 server.example.com" autocomplete="off" spellcheck="false"></div><div class="field"><label for="host-username">SSH 用户名</label><input id="host-username" type="text" placeholder="deploy" autocomplete="off" spellcheck="false"></div><div class="field"><label for="host-port">端口</label><input id="host-port" type="number" min="1" max="65535" step="1" value="22" inputmode="numeric"></div></div>
         <div id="alias-fields" class="field wide" hidden><label for="host-alias">SSH 主机别名</label><input id="host-alias" type="text" placeholder="my-server" autocomplete="off" spellcheck="false"><p class="hint">使用本机 SSH 配置中已有的 Host 名称</p></div>
+      </div></section>
+      <section class="settings-group"><h3>认证与工作目录</h3><div class="form-grid">
         <div class="field wide"><label for="host-key">私钥文件路径<span class="optional">可选</span></label><input id="host-key" type="text" placeholder="留空使用 SSH 默认密钥" autocomplete="off" spellcheck="false"></div>
         <div class="field wide"><label for="host-cwd">默认远程目录<span class="optional">可选</span></label><input id="host-cwd" type="text" placeholder="/srv/app" autocomplete="off" spellcheck="false" aria-describedby="host-cwd-hint"><p id="host-cwd-hint" class="hint">填写远程绝对路径。原始命令未指定目录时使用此设置；留空使用 SSH 登录目录。固定操作始终在 / 执行。</p></div>
-      </div>
+      </div></section>
       <section class="policy-section"><div class="field"><label for="connection-mode">连接管理</label><select id="connection-mode"><option value="legacy">兼容已有 OpenSSH 连接</option><option value="managed">受管连接 · 固定公钥与跳板</option><option value="native">原生 SSH 别名 · 信任本机配置</option></select></div><label id="native-trust-field" class="checkbox" hidden><input id="native-trust" type="checkbox"><span>我信任此别名的本机 SSH 配置（包括代理命令）；连接行为由该配置决定。</span></label>
       <div id="managed-connection" hidden><p class="hint">受管连接独立配置每一跳。请从可信渠道核对 SHA256 指纹，扫描结果不会自动受信任。只粘贴主机公钥，不要粘贴私钥。</p><div id="target-host-keys" class="rule-row"></div><div class="section-heading"><h2>跳板链路</h2><button id="add-jump" type="button" class="small">＋ 添加跳板</button></div><p class="hint">按连接顺序配置，最多 8 跳。添加或修改后先保存连接，再扫描对应主机。</p><div id="jump-hosts" class="rule-list"></div><div class="form-grid"><div class="field"><label for="connection-timeout">连接超时（秒）</label><input id="connection-timeout" type="number" min="1" max="120"></div><div class="field"><label for="connection-keepalive">保活间隔（秒）</label><input id="connection-keepalive" type="number" min="1" max="300"></div><div class="field"><label for="connection-count">保活失败次数</label><input id="connection-count" type="number" min="1" max="10"></div><div class="field"><label for="connection-persist">复用保留时间（秒）</label><input id="connection-persist" type="number" min="1" max="600"></div></div><label class="checkbox"><input id="connection-pooling" type="checkbox"><span>启用连接复用</span></label><p id="pooling-note" class="hint">Windows 不支持原生连接复用；能力探测会显示当前支持情况。</p></div>
       <div class="infrastructure-tools"><button id="probe-capabilities" type="button" class="small">探测连接能力</button></div><div id="capabilities-result" class="result-box" role="status" hidden></div></section>
@@ -76,7 +324,8 @@
   const $ = id => document.getElementById(id);
   let state = { threadId: null, hosts: [], grantedHostIds: [], grants: [], policies: [], shortcutHelp: '' };
   let connected = false, busy = false, refreshing = false, editingId = null, deletingId = null, epoch = 0, nextId = 0, timer = null;
-  const pending = new Map(), connectionTests = new Map();
+  const pending = new Map(), connectionTests = new Map(), expandedHostActions = new Set(), hostDisclosures = new Map();
+  let renderedHostList = '';
   const connectionFields = ['hostname', 'port', 'username', 'identityFile', 'sshAlias', 'defaultCwd', 'enabled', 'connection'];
   function text(tag, value, className) { const el = document.createElement(tag); el.textContent = value; if (className) el.className = className; return el; }
   function send(message) { window.parent.postMessage(message, '*'); }
@@ -212,6 +461,17 @@
       chip.append(revoke); return chip;
     });
     $('grant-chips').replaceChildren(...chips);
+    renderHostList(granted);
+    $('shortcut-help').textContent = state.shortcutHelp || '/ssh-主机标识';
+    renderGovernance();
+  }
+  function renderHostList(granted) {
+    // Leave the existing DOM and keyboard focus intact on unchanged polling replies.
+    const signature = JSON.stringify([state.threadId, state.hosts, state.policies, state.grants, [...granted], canEdit(), [...connectionTests]]);
+    if (signature === renderedHostList) return;
+    // Native details toggle events are async. Snapshot the DOM before replacing it.
+    for (const [id, more] of hostDisclosures) more.open ? expandedHostActions.add(id) : expandedHostActions.delete(id);
+    hostDisclosures.clear();
     $('empty-catalog').hidden = state.hosts.length > 0;
     $('host-list').replaceChildren(...state.hosts.map(host => {
       const row = document.createElement('article'); row.className = 'host-row';
@@ -227,7 +487,7 @@
       row.append(text('div', address + (host.defaultCwd ? '  ·  ' + host.defaultCwd : ''), 'host-address'), policySummary(host));
       const actions = document.createElement('div'); actions.className = 'host-actions';
       if (granted.has(host.id)) {
-        const revoke = action('撤销授权', 'revoke', host, () => mutate('ssh_revoke', { hostIds: [host.id] }), 'small access'); actions.append(revoke, action('续期', 'renew', host, () => grantHost(host), 'small'));
+        const revoke = action('撤销授权', 'revoke', host, () => mutate('ssh_revoke', { hostIds: [host.id] }), 'small access'); actions.append(revoke);
       } else {
         const grant = action(host.enabled ? '授权给当前聊天' : '启用后可授权', 'grant', host, () => grantHost(host), 'small access');
         grant.disabled = !canEdit() || !host.enabled; actions.append(grant);
@@ -235,13 +495,21 @@
       const test = action('测试连接', 'test', host, () => testConnection(host.id), 'small');
       test.disabled = !canEdit() || !host.enabled || !granted.has(host.id);
       test.title = !state.threadId ? '请在已识别的聊天中测试' : !host.enabled ? '请先启用此主机' : !granted.has(host.id) ? '请先授权给当前聊天' : busy ? '请等待当前操作完成' : '验证 SSH 连接';
-      actions.append(action('权限设置', 'policy', host, () => openPolicy(host), 'small'), test, action('编辑', 'edit', host, () => openEditor(host), 'quiet small'), action('删除', 'delete', host, () => confirmRemove(host), 'quiet small danger'));
-      row.append(actions);
+      actions.append(action('权限设置', 'policy', host, () => openPolicy(host), 'small'));
+      const more = document.createElement('details'); more.className = 'host-more'; more.dataset.action = 'more'; more.dataset.hostId = host.id;
+      more.open = expandedHostActions.has(host.id); hostDisclosures.set(host.id, more);
+      const summary = text('summary', '更多操作'); summary.setAttribute('aria-label', (host.name || host.id) + ' 的更多操作'); summary.setAttribute('aria-disabled', String(!canEdit()));
+      summary.onclick = event => { if (!canEdit()) event.preventDefault(); };
+      more.ontoggle = () => { if (more.isConnected === false) return; more.open ? expandedHostActions.add(host.id) : expandedHostActions.delete(host.id); };
+      const secondary = text('div', '', 'host-more-actions');
+      secondary.append(test, action('连接设置', 'edit', host, () => openEditor(host), 'small'));
+      if (granted.has(host.id)) secondary.append(action('续期授权', 'renew', host, () => grantHost(host), 'small'));
+      secondary.append(action('删除主机', 'delete', host, () => confirmRemove(host), 'quiet small danger'));
+      more.append(summary, secondary); row.append(actions, more);
       const result = connectionResult(host.id); if (result) row.append(result);
       return row;
     }));
-    $('shortcut-help').textContent = state.shortcutHelp || '/ssh-主机标识';
-    renderGovernance();
+    renderedHostList = signature;
   }
   function connectionMode() {
     const mode = $('connection-mode').value, alias = mode === 'native' || (mode === 'legacy' && $('host-mode').value === 'alias');
@@ -788,6 +1056,10 @@
   $('infrastructure-cancel').onclick=()=>controlInfrastructure('cancel');$('infrastructure-resume').onclick=()=>controlInfrastructure('resume');$('infrastructure-reconcile').onclick=()=>controlInfrastructure('reconcile');
 
   function hostStyle(context) {
+    if (context?.theme === 'light' || context?.theme === 'dark') {
+      document.documentElement.dataset.theme = context.theme;
+      document.documentElement.style.colorScheme = context.theme;
+    }
     const vars = context?.styles?.variables;
     if (vars && typeof vars === 'object') for (const [key, value] of Object.entries(vars)) if (key.startsWith('--') && typeof value === 'string') document.documentElement.style.setProperty(key, value);
   }
@@ -813,7 +1085,7 @@
     render();
     try {
       if (window.parent === window) throw new Error('请从 Codex 聊天中打开 SSH 主机面板。');
-      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.4.1' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
+      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.4.5' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
       hostStyle(result.hostContext); notify('ui/notifications/initialized'); connected = true; controls();
       await refresh();
       timer = setInterval(() => { if (!document.hidden) refresh(true); }, 5000);

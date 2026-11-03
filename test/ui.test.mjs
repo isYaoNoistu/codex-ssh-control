@@ -6,9 +6,10 @@ import vm from 'node:vm';
 class Element {
   constructor(tag = 'div') {
     this.tagName = tag.toUpperCase(); this.children = []; this.dataset = {}; this.attributes = {};
-    this.value = ''; this.checked = false; this.disabled = false; this.hidden = false; this._text = '';
+    this.value = ''; this.checked = false; this.disabled = false; this.hidden = false; this.open = false; this._text = '';
     this.classList = { add() {}, remove() {}, toggle() {} };
-    this.style = { setProperty() {} };
+    const properties = new Map();
+    this.style = { setProperty: (key, value) => properties.set(key, value), getPropertyValue: key => properties.get(key) ?? '' };
   }
   set textContent(value) { this._text = String(value); this.children = []; }
   get textContent() { return this._text + this.children.map(child => child.textContent ?? child).join(''); }
@@ -33,7 +34,7 @@ async function harness(startState = initial(), override) {
   assert.ok(html, 'The SSH host panel must exist.');
   const source = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(source, 'Panel must contain its self-contained UI controller.');
-  const ids = new Map([...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*\bid="([^"]+)"[^>]*>/gi)].map(match => { const element = new Element(match[1]); element.textContent = html.slice(match.index + match[0].length).split('<')[0]; return [match[2], element]; }));
+  const ids = new Map([...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*\bid="([^"]+)"[^>]*>/gi)].map(match => { const element = new Element(match[1]); element.hidden = /\shidden(?:\s|>|=)/u.test(match[0]); element.textContent = html.slice(match.index + match[0].length).split('<')[0]; return [match[2], element]; }));
   const listeners = new Map(), documentListeners = new Map(), calls = [], messages = [], intervals = [], timeouts = new Map(), timeoutDelays = [];
   let nextTimer = 0, state = structuredClone(startState);
   const document = {
@@ -78,7 +79,7 @@ async function harness(startState = initial(), override) {
     for (const element of ids.values()) { const found = walk(element); if (found) return found; }
     assert.fail('Missing action ' + action + ' for ' + id);
   }
-  return { ids, calls, messages, intervals, timeouts, timeoutDelays, document, documentListeners, findAction, settle, state: () => state };
+  return { ids, calls, messages, intervals, timeouts, timeoutDelays, document, documentListeners, listeners, parent, findAction, settle, state: () => state };
 }
 
 test('initializes bridge then automatically reads authoritative chat state', async () => {
@@ -90,6 +91,45 @@ test('initializes bridge then automatically reads authoritative chat state', asy
   assert.ok(!h.ids.get('thread-label').textContent.includes('ui-context-only'));
   assert.equal(h.ids.get('host-list').children.length, 2);
   assert.equal(h.calls.some(call => call.name === 'ssh_exec'), false);
+});
+
+test('sidebar theme follows initialization and authenticated parent context updates', async () => {
+  const h = await harness();
+  const root = h.document.documentElement;
+  assert.equal(root.dataset.theme, 'light');
+  assert.equal(root.style.colorScheme, 'light');
+  for (const theme of ['dark', 'light']) {
+    h.listeners.get('message')({ source: h.parent, data: { jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme } } });
+    assert.equal(root.dataset.theme, theme);
+    assert.equal(root.style.colorScheme, theme);
+  }
+});
+
+test('sidebar theme and variables ignore context updates from a different window', async () => {
+  const h = await harness();
+  const root = h.document.documentElement;
+  h.listeners.get('message')({ source: {}, data: { jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme: 'dark', styles: { variables: { '--color-text-primary': 'untrusted' } } } } });
+  assert.equal(root.dataset.theme, 'light');
+  assert.equal(root.style.colorScheme, 'light');
+  assert.equal(root.style.getPropertyValue('--color-text-primary'), '');
+});
+
+test('sidebar partial or invalid context updates preserve the theme while applying valid style variables', async () => {
+  const h = await harness();
+  const root = h.document.documentElement;
+  const contextChanged = params => h.listeners.get('message')({ source: h.parent, data: { jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params } });
+  contextChanged({ theme: 'dark' });
+  contextChanged({ styles: { variables: { '--color-text-primary': '#eeeeee', color: 'red', '--invalid-value': 12 } } });
+  assert.equal(root.dataset.theme, 'dark');
+  assert.equal(root.style.colorScheme, 'dark');
+  assert.equal(root.style.getPropertyValue('--color-text-primary'), '#eeeeee');
+  assert.equal(root.style.getPropertyValue('color'), '');
+  assert.equal(root.style.getPropertyValue('--invalid-value'), '');
+  for (const theme of [undefined, null, 'system', 'DARK', {}]) {
+    contextChanged({ theme });
+    assert.equal(root.dataset.theme, 'dark');
+    assert.equal(root.style.colorScheme, 'dark');
+  }
 });
 
 test('grants multiple hosts and revokes one without passing a model supplied identity', async () => {
@@ -156,6 +196,92 @@ test('refreshes only while visible and renders untrusted host names as text', as
   h.document.hidden = false;
   for (const tick of h.intervals) tick();
   await h.settle(); assert.equal(h.calls.length, before + 1);
+});
+
+test('host secondary actions start collapsed while authorization and permissions stay directly available', async () => {
+  const h = await harness(initial({ grantedHostIds: ['prod'] }));
+  for (const hostId of ['prod', 'uat']) {
+    const more = h.findAction('more', hostId);
+    assert.equal(more.tagName, 'DETAILS');
+    assert.equal(more.open, false);
+    assert.equal(more.children[0].tagName, 'SUMMARY');
+    assert.equal(more.children[0].textContent, '更多操作');
+    for (const action of ['test', 'edit', 'delete', ...(hostId === 'prod' ? ['renew'] : [])]) {
+      assert.equal(findData(more, 'action', action), h.findAction(action, hostId));
+    }
+    assert.equal(findData(more, 'action', 'policy'), undefined);
+    assert.equal(findData(more, 'action', hostId === 'prod' ? 'revoke' : 'grant'), undefined);
+    assert.equal(h.findAction('policy', hostId).disabled, false);
+    assert.equal(h.findAction(hostId === 'prod' ? 'revoke' : 'grant', hostId).disabled, false);
+  }
+});
+
+test('host secondary action expansion survives automatic refresh and respects a later collapse', async () => {
+  const h = await harness();
+  const original = h.findAction('more', 'prod');
+  original.open = true; original.ontoggle({ target: original });
+  const before = h.calls.filter(call => call.name === 'ssh_status').length;
+  h.intervals[0](); await h.settle();
+  assert.equal(h.calls.filter(call => call.name === 'ssh_status').length, before + 1);
+  const refreshed = h.findAction('more', 'prod');
+  assert.equal(refreshed.open, true);
+  assert.equal(h.findAction('more', 'uat').open, false);
+  refreshed.open = false; refreshed.ontoggle({ target: refreshed });
+  h.intervals[0](); await h.settle();
+  assert.equal(h.findAction('more', 'prod').open, false);
+});
+
+test('unchanged host polling reuses action nodes until authorization changes', async () => {
+  const h = await harness(initial({ grantedHostIds: ['prod'] }));
+  const more = h.findAction('more', 'prod'), button = h.findAction('test', 'prod');
+  assert.equal(button.disabled, false);
+  const before = h.calls.filter(call => call.name === 'ssh_status').length;
+  h.intervals[0](); await h.settle();
+  assert.equal(h.calls.filter(call => call.name === 'ssh_status').length, before + 1);
+  assert.equal(h.findAction('more', 'prod'), more);
+  assert.equal(h.findAction('test', 'prod'), button);
+  h.state().grantedHostIds = [];
+  h.intervals[0](); await h.settle();
+  assert.notEqual(h.findAction('more', 'prod'), more);
+  assert.notEqual(h.findAction('test', 'prod'), button);
+  assert.equal(h.findAction('test', 'prod').disabled, true);
+  await h.findAction('test', 'prod').click();
+  assert.equal(h.calls.some(call => call.name === 'ssh_test_connection'), false);
+});
+
+test('changed host notifications preserve an open disclosure before its native toggle event fires', async () => {
+  const h = await harness();
+  const original = h.findAction('more', 'prod');
+  original.open = true;
+  h.state().hosts[0].name = '刚更新的主机名称';
+  h.listeners.get('message')({ source: h.parent, data: { jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { state: structuredClone(h.state()) } } } });
+  const refreshed = h.findAction('more', 'prod');
+  assert.notEqual(refreshed, original);
+  assert.equal(refreshed.open, true);
+  assert.equal(h.findAction('more', 'uat').open, false);
+  assert.match(h.ids.get('host-list').textContent, /刚更新的主机名称/);
+});
+
+test('expanded host secondary actions cannot test, edit or delete during another pending mutation', async () => {
+  let finishGrant;
+  const h = await harness(initial({ grantedHostIds: ['prod'] }), (call, state) => call.name === 'ssh_grant'
+    ? new Promise(resolve => { finishGrant = () => resolve({ content: [], structuredContent: { state } }); }) : undefined);
+  const more = h.findAction('more', 'prod');
+  more.open = true; more.ontoggle({ target: more });
+  const granting = h.findAction('grant', 'uat').click(); await h.settle();
+  assert.equal(typeof finishGrant, 'function');
+  assert.equal(h.findAction('more', 'prod').open, true);
+  const before = h.calls.length;
+  for (const action of ['test', 'edit', 'delete']) {
+    const button = h.findAction(action, 'prod');
+    assert.equal(button.disabled, true, action + ' must be disabled during a mutation');
+    await button.click();
+  }
+  assert.equal(h.calls.length, before);
+  assert.equal(h.ids.get('host-detail-view').hidden, true);
+  assert.equal(h.ids.get('delete-confirmation').hidden, true);
+  finishGrant(); await granting; await h.settle();
+  for (const action of ['test', 'edit', 'delete']) assert.equal(h.findAction(action, 'prod').disabled, false);
 });
 
 test('a disabled host must be enabled before its grant action becomes available', async () => {
@@ -554,11 +680,21 @@ test('audit filters and next-page cursor use actual API results and render hosti
   assert.equal(h.calls.filter(call => call.name === 'ssh_audit_list').at(-1).arguments.result, 'denied');
 });
 
-test('expired grant is shown as expired and cannot enable a connection test', async () => {
-  const h = await harness(initial({ grantedHostIds: ['prod'], grants: [{ hostId: 'prod', expiresAt: Date.now() - 1, policyRevision: 1 }] }));
+test('grant expiration replaces enabled test controls even when the status payload is unchanged', async t => {
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const h = await harness(initial({ grantedHostIds: ['prod'], grants: [{ hostId: 'prod', expiresAt: now + 60000, policyRevision: 1 }] }));
+  const button = h.findAction('test', 'prod'), before = structuredClone(h.state());
+  assert.equal(button.disabled, false);
+  now += 60001;
+  h.intervals[0](); await h.settle();
+  assert.deepEqual(h.state(), before);
+  assert.notEqual(h.findAction('test', 'prod'), button);
   assert.equal(h.ids.get('grant-count').textContent, '0');
   assert.equal(h.findAction('test', 'prod').disabled, true);
   assert.match(h.ids.get('host-list').textContent, /已到期/);
+  await h.findAction('test', 'prod').click();
+  assert.equal(h.calls.some(call => call.name === 'ssh_test_connection'), false);
 });
 
 
