@@ -183,3 +183,20 @@ test('Windows capability probe disables unsupported pooling and renders prerequi
   const h=await harness(initial({grantedHostIds:['prod'],hosts:[host('prod',{connection:{mode:'managed',hostKeys:[publicKey],jumpHosts:[]}})]}),(call,state)=>call.name==='ssh_capabilities'?reply(state,{capabilities:{local:{platform:'win32',pooling:{supported:false,reason:'Windows 不支持连接复用'}},remote:{os:'Linux',python:{version:'3.12'},tasksReady:true,transfersReady:false}}}):undefined);
   await h.findAction('edit','prod').click();await h.ids.get('probe-capabilities').click();await settle();assert.equal(h.ids.get('connection-pooling').disabled,true);assert.match(h.ids.get('capabilities-result').textContent,/Windows.*不支持/);assert.match(h.ids.get('capabilities-result').textContent,/前置条件不满足/);
 });
+
+test('revoked job details request cached output without attempting remote refresh',async()=>{
+  const job={id:'job-1',hostId:'prod',status:'running',output:'cached output'};
+  const h=await harness(initial(),(call,state)=>call.name==='ssh_job_list'?reply(state,{jobs:[job]}):call.name==='ssh_job_read'?
+    (call.arguments.refresh?{isError:true,content:[{type:'text',text:'grant revoked'}]}:reply(state,{job})):undefined);
+  await h.ids.get('tab-history').click();h.ids.get('execution-kind').value='jobs';await h.ids.get('execution-kind').onchange();await settle();
+  await walk(h.ids.get('infrastructure-list'),e=>e.dataset?.taskId==='job-1').click();await settle();
+  assert.equal(h.calls.find(c=>c.name==='ssh_job_read').arguments.refresh,false);
+  assert.match(h.ids.get('infrastructure-detail').textContent,/cached output/);assert.equal(h.ids.get('infrastructure-cancel').disabled,true);
+});
+
+test('switching an existing managed connection to legacy explicitly clears merged connection settings',async()=>{
+  const h=await harness(initial({hosts:[host('prod',{connection:{mode:'managed',hostKeys:[publicKey],jumpHosts:[]}})]}));
+  await h.findAction('edit','prod').click();h.ids.get('connection-mode').value='legacy';h.ids.get('connection-mode').onchange();
+  await h.ids.get('host-form').onsubmit({preventDefault(){}});await settle();
+  assert.equal(h.calls.find(c=>c.name==='ssh_host_save').arguments.host.connection,null);
+});

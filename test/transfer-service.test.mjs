@@ -37,9 +37,9 @@ function fakeRemote(){
    if(req.operation==='target')result={snapshot:null};
    else if(req.operation==='inspect')result={snapshot:{dev:'1',ino:'2',size:state.source.length,mtimeNs:'1000000000',ctimeNs:'1000000000',mode:0o600,sha256:hash(state.source)}};
    else if(req.operation==='read'){assert.equal(hash(state.source.subarray(0,req.offset)),req.prefixSha256);child.stdout.end(state.source.subarray(req.offset));child.stderr.end();setImmediate(()=>child.emit('close',0));return;}
-   else if(req.operation==='stage')result={offset:state.data.length,prefixSha256:hash(state.data)};
+   else if(req.operation==='stage')result=state.committed?{committed:true}:{offset:state.data.length,prefixSha256:hash(state.data)};
    else if(req.operation==='write'){for await(const chunk of child.stdin)state.data=Buffer.concat([state.data,chunk]);result={offset:state.data.length,prefixSha256:hash(state.data)};}
-   else if(req.operation==='commit'){assert.equal(hash(state.data),req.sha256);state.committed=true;result={committed:true};}
+   else if(req.operation==='commit'){assert.equal(hash(state.data),req.sha256);state.committed=true;if(state.loseCommitResponse){state.loseCommitResponse=false;child.stdout.end();child.stderr.end();setImmediate(()=>child.emit('close',1));return;}result={committed:true};}
    else throw new Error('unexpected '+req.operation);
    child.stdout.end(JSON.stringify({ok:true,result}));child.stderr.end();setImmediate(()=>child.emit('close',0));
   }catch(error){child.stdout.end(JSON.stringify({ok:false,error:error.message}));setImmediate(()=>child.emit('close',1));}});return child;
@@ -125,4 +125,26 @@ binaryTest('revocation during a stream is checked before each following chunk',a
  }});
  const plan=await service.prepare(request);await service.start({threadId:'chat',planId:plan.planId});const stopped=await service.wait({threadId:'chat',transferId:plan.planId});
  assert.equal(stopped.status,'interrupted');assert.match(stopped.error,/revoked/);assert.ok(remote.data.length<2*1024*1024);assert.equal(remote.committed,false);
+});
+
+binaryTest('lost upload commit response can be reconciled from its receipt after source removal',async t=>{
+ const {root,request}=await fixture(t),remote=fakeRemote();remote.loseCommitResponse=true;
+ const service=tracked(t,{dataDir:path.join(root,'receipt-state'),spawnRemote:remote.spawn,authorize:async()=>true});
+ const plan=await service.prepare(request);await service.start({threadId:'chat',planId:plan.planId});
+ assert.equal((await service.wait({threadId:'chat',transferId:plan.planId})).status,'commit_unknown');assert.equal(remote.committed,true);
+ await fs.unlink(request.localPath);
+ await service.resume({threadId:'chat',transferId:plan.planId});
+ assert.equal((await service.wait({threadId:'chat',transferId:plan.planId})).status,'completed');
+ assert.equal(remote.operations.filter(x=>x==='write').length,1);assert.equal(remote.operations.filter(x=>x==='commit').length,1);
+});
+
+binaryTest('lost local publication acknowledgement recovers the owned inode without rereading changed remote source',async t=>{
+ const {root,request}=await fixture(t),remote=fakeRemote();let allowCommit=false;
+ const service=tracked(t,{dataDir:path.join(root,'local-receipt-state'),spawnRemote:remote.spawn,authorize:async stage=>stage!=='commit'||allowCommit});
+ const localPath=path.join(root,'download'),plan=await service.prepare({...request,direction:'download',localPath});
+ await service.start({threadId:'chat',planId:plan.planId});await service.wait({threadId:'chat',transferId:plan.planId});
+ const record=await service._load('chat',plan.planId);await fs.link(record.partial.path,localPath);record.status='commit_unknown';await service._save(record);
+ remote.source=Buffer.from('new source');const before=remote.operations.length;allowCommit=true;
+ await service.resume({threadId:'chat',transferId:plan.planId});assert.equal((await service.wait({threadId:'chat',transferId:plan.planId})).status,'completed');
+ assert.deepEqual(await fs.readFile(localPath),Buffer.from([0,255,3]));assert.equal(remote.operations.length,before);
 });

@@ -258,6 +258,7 @@
     const host = { id: editingId || $('host-id').value.trim(), name: $('host-name').value.trim(), hostname: alias ? '' : $('host-hostname').value.trim(), username: alias ? '' : $('host-username').value.trim(), port: alias ? 22 : Number($('host-port').value || 22), sshAlias: alias ? $('host-alias').value.trim() : '', identityFile: $('host-key').value.trim(), defaultCwd: $('host-cwd').value.trim(), enabled: $('host-enabled').checked };
     if (mode === 'managed') host.connection = managedDraft();
     if (mode === 'native') host.connection = { mode: 'native', trustedLocalConfig: $('native-trust').checked };
+    if (mode === 'legacy' && state.hosts.find(item => item.id === editingId)?.connection) host.connection = null;
     return host;
   }
   function fillConnection(host = null) {
@@ -751,7 +752,9 @@
   }
   async function readInfrastructure(append=false){
     if(!canEdit() || !infrastructureSelected)return;const sequence=++infrastructureSequence,at=epoch,kind=executionKind,thread=state.threadId;infrastructureLoading=true;renderInfrastructure();
-    try{const args={...infrastructureIdentity(),...(kind==='jobs'?{limitBytes:32768,refresh:!append,...(append?{cursor:infrastructureEntry?.nextCursor}: {})}:{})};const result=await tool(infrastructureTool('read'),args);if(sequence!==infrastructureSequence || at!==epoch || kind!==executionKind || thread!==state.threadId || result.state.threadId!==thread)return;const entry=result[kind==='jobs'?'job':'transfer'];if(!entry || entry.id!==infrastructureSelected)throw new Error('未收到对应运行详情。');applyState(result.state);infrastructureEntry=entry;infrastructureOutput=append?infrastructureOutput+(entry.output || ''):entry.output || '';}
+    const selected=infrastructureEntry || infrastructureItems.find(item=>item.id===infrastructureSelected);
+    const canRefresh=Boolean(selected && activeGrant(selected.hostId) && state.hosts.find(host=>host.id===selected.hostId)?.enabled);
+    try{const args={...infrastructureIdentity(),...(kind==='jobs'?{limitBytes:32768,refresh:!append && canRefresh,...(append?{cursor:infrastructureEntry?.nextCursor}: {})}:{})};const result=await tool(infrastructureTool('read'),args);if(sequence!==infrastructureSequence || at!==epoch || kind!==executionKind || thread!==state.threadId || result.state.threadId!==thread)return;const entry=result[kind==='jobs'?'job':'transfer'];if(!entry || entry.id!==infrastructureSelected)throw new Error('未收到对应运行详情。');applyState(result.state);infrastructureEntry=entry;infrastructureOutput=append?infrastructureOutput+(entry.output || ''):entry.output || '';}
     catch(error){if(sequence===infrastructureSequence)showError(error);}finally{if(sequence===infrastructureSequence){infrastructureLoading=false;renderInfrastructure();}}
   }
   async function controlInfrastructure(action){
@@ -806,7 +809,7 @@
     render();
     try {
       if (window.parent === window) throw new Error('请从 Codex 聊天中打开 SSH 主机面板。');
-      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.4.0' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
+      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.4.1' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
       hostStyle(result.hostContext); notify('ui/notifications/initialized'); connected = true; controls();
       await refresh();
       timer = setInterval(() => { if (!document.hidden) refresh(true); }, 5000);

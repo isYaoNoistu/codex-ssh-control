@@ -35,10 +35,10 @@ function textSlice(text,cursor,limit){const b=Buffer.from(text);if(cursor>b.leng
 
 /** Durable task control. A failed transport is an observation failure, never a replay instruction. */
 export class JobService {
- constructor({dataDir,execute,authorize,sanitizeOutput,onUpdate}={}){
-  if(!dataDir||typeof execute!=='function'||typeof authorize!=='function')throw Error('Task service requires dataDir, execute and authorize');
+ constructor({dataDir,execute,authorize,beforeDispatch=()=>{},sanitizeOutput,onUpdate}={}){
+  if(!dataDir||typeof execute!=='function'||typeof authorize!=='function'||typeof beforeDispatch!=='function')throw Error('Task service requires dataDir, execute and authorize');
   const stateDir=join(dataDir,'task-state');mkdirSync(stateDir,{recursive:true,mode:0o700});const stat=lstatSync(stateDir);if(stat.isSymbolicLink()||!stat.isDirectory()||(process.platform!=='win32'&&(stat.uid!==process.getuid()||(stat.mode&0o077))))throw Error('Unsafe local task state directory');
-  this.db=new DatabaseSync(join(stateDir,'jobs.sqlite'));this.execute=execute;this.authorize=authorize;this.sanitizeOutput=sanitizeOutput;this.onUpdate=onUpdate;
+  this.db=new DatabaseSync(join(stateDir,'jobs.sqlite'));this.execute=execute;this.authorize=authorize;this.beforeDispatch=beforeDispatch;this.sanitizeOutput=sanitizeOutput;this.onUpdate=onUpdate;
   this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, idem TEXT NOT NULL, identity TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(thread_id,idem))');
  }
  close(){if(this.db){this.db.close();this.db=null;}}
@@ -77,6 +77,8 @@ export class JobService {
   // Insert before contacting SSH. A crash from this point is reconciled by read, never resubmitted.
   try{this.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?)').run(record.id,threadId,idempotencyKey,identity,JSON.stringify(record));}
   catch(error){const raced=this.db.prepare('SELECT record FROM jobs WHERE thread_id=? AND idem=?').get(threadId,idempotencyKey);if(!raced)throw error;const r=JSON.parse(raced.record);if(r.identity!==identity)throw Error('Task immutable snapshot mismatch');return publicRecord(r);}
+  try{const result=this.beforeDispatch(structuredClone(publicRecord(record)));if(result&&typeof result.then==='function')throw Error('beforeDispatch must be synchronous');}
+  catch(error){record.status='failed';record.observation='confirmed';record.terminationReason='launch_failed';await this.update(record);throw error;}
   await this.remote(record,'submit');return publicRecord(record);
  }
  async remote(record,action){

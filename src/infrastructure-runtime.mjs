@@ -12,7 +12,7 @@ const terminal=new Set(['completed','failed','cancelled','timed_out']);
 const stable=v=>JSON.stringify(v,(_k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.entries(x).sort(([a],[b])=>a.localeCompare(b))):x);
 const hostIdentity=h=>Object.fromEntries(['id','hostname','username','port','sshAlias','identityFile','defaultCwd','connection'].filter(k=>h[k]!==undefined).map(k=>[k,h[k]]));
 const publicJob=r=>{const {host,...out}=r;return out;};
-const publicTransfer=r=>({...r,id:r.transferId,totalBytes:r.size??0});
+const publicTransfer=r=>({...r,id:r.transferId,hostId:r.approvalPayload.hostId,totalBytes:r.size??0});
 
 export function createInfrastructureRuntime({dataDir,store,gate,requireActive,finish,spawnImpl=spawn}) {
   const context=new AsyncLocalStorage(),children=new Set(),inflight=new Set();let closing=false;
@@ -51,13 +51,11 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
       if(op.kind!=='job')throw new Error('后台任务缺少精确执行批准');
       const {kind,idempotencyKey,...expected}=op;
       if(stable({...expected,command:ticket.permit.evaluation.command})!==stable(record.operation))throw new Error('后台任务执行选项与审批内容不一致');
-      store.trackExternalOperation(record.threadId,ticket.permit.operationId,'job',record.id,{deadline:Date.now()+(record.operation.timeoutSeconds+30)*1000});
     } else if(['start','resume','commit'].includes(stage)) {
       const approved=op.kind==='transfer_control'&&op.action==='resume'?op.transfer:op;
       if(approved.kind!=='transfer'||stable(approved)!==stable(transferOperation(record)))throw new Error('传输内容与已批准快照不一致');
       if(stage==='start'){
         if(op.kind!=='transfer')throw new Error('开始传输需要独立批准');
-        store.trackExternalOperation(record.threadId,ticket.permit.operationId,'transfer',record.transferId,{deadline:record.expiresAt});
       } else if(stage==='resume') {
         if(op.kind!=='transfer_control'||op.action!=='resume')throw new Error('续传需要重新批准');
         const renewed=store.renewExternalOperation(record.threadId,ticket.permit.operationId,'transfer',record.transferId,{deadline:record.expiresAt});
@@ -86,8 +84,15 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
       finish(tracked.id,{status:record.status,exitCode:record.exitCode,stdout:cached.output,truncated:record.truncated||cached.hasMore,sensitiveOutput:record.redacted});
     }
   }
-  const jobs=new JobService({dataDir,execute,authorize,onUpdate:onJobUpdate});
-  const transfers=new TransferService({dataDir,spawnRemote,authorize,validateLease:()=>current()});
+  function beforeDispatch(kind,record) {
+    const ticket=current(record.host);
+    const id=kind==='job'?record.id:record.transferId;
+    const deadline=kind==='job'?Date.now()+(record.operation.timeoutSeconds+30)*1000:record.expiresAt;
+    store.trackExternalOperation(record.threadId,ticket.permit.operationId,kind,id,{deadline});
+    ticket.externalTracked=true;
+  }
+  const jobs=new JobService({dataDir,execute,authorize,beforeDispatch:r=>beforeDispatch('job',r),onUpdate:onJobUpdate});
+  const transfers=new TransferService({dataDir,spawnRemote,authorize,beforeDispatch:r=>beforeDispatch('transfer',r),validateLease:()=>current()});
   function onTransferUpdate(record) {
     if(closing)return;
     const tracked=store.getExternalOperation(record.threadId,'transfer',record.transferId);if(!tracked)return;
@@ -96,14 +101,16 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
   }
   const followTransfer=record=>{transfers.wait({threadId:record.threadId,transferId:record.transferId}).then(onTransferUpdate).catch(()=>{});};
   async function permitted(ctx,args,op,signal,action,{durable=false}={}) {
-    const permit=await gate(ctx,args,op,signal);requireActive(signal,permit.operationId,ctx.threadId);
-    return context.run({ctx,permit},async()=>{
+    const permit=await gate(ctx,args,op,signal);
+    const ticket={ctx,permit,externalTracked:false};
+    return context.run(ticket,async()=>{
       try {
+        requireActive(signal,permit.operationId,ctx.threadId);
         const result=await action(permit);
         if(!durable)finish(permit.operationId,{status:'completed',exitCode:0,stdout:'操作已完成；详细状态请查看任务或传输记录。'});
         return result;
       } catch(error) {
-        if(!closing){if(durable)store.markOperationUnknown(permit.operationId,'请求未能确认完成，请查询任务记录；没有自动重放。');else finish(permit.operationId,{status:'failed',stderr:error.message});}
+        if(!closing){if(durable&&ticket.externalTracked)store.markOperationUnknown(permit.operationId,'请求未能确认完成，请查询任务记录；没有自动重放。');else finish(permit.operationId,{status:'failed',stderr:error.message});}
         throw error;
       }
     });

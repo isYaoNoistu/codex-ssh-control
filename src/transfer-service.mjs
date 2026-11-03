@@ -38,9 +38,9 @@ function validateRequest(r,now){
  * to authorize or returned to callers. Approval must bind approvalPayload.
  */
 export class TransferService {
- constructor({dataDir,spawnRemote,authorize,validateLease=()=>{},clock=Date.now}){
-  if(!dataDir||typeof spawnRemote!=='function'||typeof authorize!=='function'||typeof validateLease!=='function')throw new Error('transfer dependencies required');
-  this.directory=path.join(dataDir,'transfers');this.spawnRemote=spawnRemote;this.authorize=authorize;this.validateLease=validateLease;this.clock=clock;this.running=new Map();this.children=new Map();this.starting=new Set();
+ constructor({dataDir,spawnRemote,authorize,validateLease=()=>{},beforeDispatch=()=>{},clock=Date.now}){
+  if(!dataDir||typeof spawnRemote!=='function'||typeof authorize!=='function'||typeof validateLease!=='function'||typeof beforeDispatch!=='function')throw new Error('transfer dependencies required');
+  this.directory=path.join(dataDir,'transfers');this.spawnRemote=spawnRemote;this.authorize=authorize;this.validateLease=validateLease;this.beforeDispatch=beforeDispatch;this.clock=clock;this.running=new Map();this.children=new Map();this.starting=new Set();
   mkdirSync(this.directory,{recursive:true,mode:0o700});this.db=new DatabaseSync(path.join(this.directory,'transfers.sqlite'));this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS transfers (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, record TEXT NOT NULL, owner_pid INTEGER, owner_token TEXT, stop_requested INTEGER NOT NULL DEFAULT 0)');
  }
  async _save(r){
@@ -100,7 +100,13 @@ export class TransferService {
  async start({threadId,planId}){
   requireLocalTransferSupport();
   if(this.starting.has(planId))throw new Error('transfer already starting');this.starting.add(planId);
-  let r,launched=false;try{r=await this._claim(threadId,planId);if(r.status!=='prepared')throw new Error('transfer plan already started');this._fresh(r);await this._auth('start',r);this._fresh(r);await this._verifySource(r);this._fresh(r);r.status='queued';await this._save(r);this._launch(r);launched=true;return publicRecord(r);}finally{if(!launched)this._release(r);this.starting.delete(planId);}
+  let r,launched=false;try{r=await this._claim(threadId,planId);if(r.status!=='prepared')throw new Error('transfer plan already started');this._fresh(r);await this._auth('start',r);this._fresh(r);await this._verifySource(r);this._fresh(r);r.status='queued';await this._save(r);
+   // Bind a durable execution slot only after all preflight checks succeeded.
+   // This synchronous handoff and launch must not yield to another controller.
+   const result=this.beforeDispatch(publicRecord(r));if(result&&typeof result.then==='function')throw new Error('beforeDispatch must be synchronous');
+   this._launch(r);launched=true;return publicRecord(r);
+  }catch(error){if(r?.status==='queued'&&!launched){r.status='prepared';await this._save(r);}throw error;}
+  finally{if(!launched)this._release(r);this.starting.delete(planId);}
  }
  async _verifySource(r){
   const current=r.direction==='upload'?await inspectLocalFile(r.localPath,r.localRoot,{blockedPaths:r.localBlockedPaths??[]}):(await this._metadata(r,'inspect')).snapshot;
@@ -143,7 +149,9 @@ export class TransferService {
   if(this.starting.has(transferId))throw new Error('transfer already starting');this.starting.add(transferId);
   let r,launched=false;try{r=await this._claim(threadId,transferId);if(this.running.has(transferId)||TERMINAL.has(r.status)||r.status==='prepared')throw new Error('transfer cannot resume in current state');
   if(expiresAt!==undefined){if(!Number.isFinite(expiresAt)||expiresAt<=this.clock())throw new Error('transfer expired');r.previousExpiresAt=r.expiresAt;r.expiresAt=expiresAt;r.approvalPayload={...r.approvalPayload,expiresAt};}
-  this._fresh(r);await this._auth('resume',r);this._fresh(r);await this._verifySource(r);this._fresh(r);r.status='queued';await this._save(r);this._launch(r);launched=true;return publicRecord(r);}finally{if(!launched)this._release(r);this.starting.delete(transferId);}
+  // Resolve an already-published inode/receipt before consulting the source.
+  // _run validates the frozen source again before copying any remaining bytes.
+  this._fresh(r);await this._auth('resume',r);this._fresh(r);r.status='queued';await this._save(r);this._launch(r);launched=true;return publicRecord(r);}finally{if(!launched)this._release(r);this.starting.delete(transferId);}
  }
  async read({threadId,transferId,cursor=0}){if(!Number.isSafeInteger(cursor)||cursor<0)throw new Error('invalid progress cursor');const r=await this._load(threadId,transferId),live=this.running.get(transferId)?.record;const value=publicRecord(r);if(live){value.bytesTransferred=live.bytesTransferred;value.cursor=Math.max(value.cursor,live.cursor);}const owner=this.db.prepare('SELECT owner_pid,owner_token FROM transfers WHERE id=?').get(transferId);if(!owner.owner_token||!alive(owner.owner_pid)){if(['queued','streaming','verifying'].includes(value.status))value.status='interrupted';if(value.status==='committing')value.status='commit_unknown';}return {...value,changed:value.cursor>cursor};}
  async list({threadId,cursor=0,limit=50}){if(!Number.isSafeInteger(cursor)||cursor<0||!Number.isInteger(limit)||limit<1||limit>100)throw new Error('invalid list cursor/limit');const rows=this.db.prepare('SELECT id FROM transfers WHERE thread_id=? ORDER BY id LIMIT ? OFFSET ?').all(threadId,limit+1,cursor);const transfers=[];for(const row of rows.slice(0,limit))transfers.push(await this.read({threadId,transferId:row.id}));return {transfers,cursor:cursor+transfers.length,hasMore:rows.length>limit};}
