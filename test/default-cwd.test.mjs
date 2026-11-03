@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-import {setup,pause} from './helpers/rpc-harness.mjs';
+import {setup,pause,promptText} from './helpers/rpc-harness.mjs';
 
 const explanation='查看命令的工作目录，验证主机默认目录和审批内容一致。';
 
@@ -29,7 +29,7 @@ test('omitted raw command cwd uses the host default in approval, execution and h
  const response=await h.call('ssh_exec',{hostId:'fixture',command:'pwd',explanation});
  assert.equal(response.isError,undefined);
  assert.equal(response.structuredContent.task.cwd,'/srv/fixture-app');
- assert.match(h.prompts[0].params.message,/工作目录：\/srv\/fixture-app/);
+ assert.match(promptText(h.prompts[0]),/工作目录：\/srv\/fixture-app/);
  assert.equal(await command(h),"cd -- '/srv/fixture-app' || exit $?;\npwd");
  const entry=await latest(h);
  assert.equal(entry.cwd,'/srv/fixture-app');
@@ -42,7 +42,7 @@ test('an explicit raw cwd overrides the host default in every execution view',as
  const response=await h.call('ssh_exec',{hostId:'fixture',command:'pwd',cwd:'/srv/override',explanation});
  assert.equal(response.isError,undefined);
  assert.equal(response.structuredContent.task.cwd,'/srv/override');
- assert.match(h.prompts[0].params.message,/工作目录：\/srv\/override/);
+ assert.match(promptText(h.prompts[0]),/工作目录：\/srv\/override/);
  assert.equal(await command(h),"cd -- '/srv/override' || exit $?;\npwd");
  assert.equal((await latest(h)).cwd,'/srv/override');
 });
@@ -53,7 +53,7 @@ test('explicit empty cwd and an unconfigured default preserve the SSH login dire
   const response=await h.call('ssh_exec',{hostId:'fixture',command:'pwd',explanation,...input});
   assert.equal(response.isError,undefined);
   assert.equal(response.structuredContent.task.cwd,'');
-  assert.match(h.prompts[0].params.message,/工作目录：\(SSH默认目录\)/);
+  assert.match(promptText(h.prompts[0]),/工作目录：\(SSH默认目录\)/);
   assert.equal(await command(h),'pwd');
   assert.equal((await latest(h)).cwd,'(SSH默认目录)');
  });

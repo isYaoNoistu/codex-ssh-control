@@ -43,3 +43,4 @@ export async function setup(t,{elicitation=true}={}){
 }
 export const pause=()=>new Promise(resolve=>setTimeout(resolve,40));
 export const purpose='停止指定的测试容器，以便验证用户确认后才执行的流程。';
+export const promptText=message=>[message.params.message,...Object.values(message.params.requestedSchema.properties).map(field=>field.description??'')].join('\n');

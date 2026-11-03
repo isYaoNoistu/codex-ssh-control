@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {setup} from './helpers/rpc-harness.mjs';
+import {setup,promptText} from './helpers/rpc-harness.mjs';
 
 test('new infrastructure tools are discoverable and key management is app-only',async t=>{
   const h=await setup(t);const {tools}=await h.rpc('tools/list',{});
@@ -20,7 +20,7 @@ test('new limits and complete job execution options appear in native confirmatio
   const h=await setup(t);await h.patchPolicy({mode:'approval',jobs:{enabled:true,allowedEnv:['APP_MODE']}});await h.grants();
   h.setElicitation(m=>h.answer(m.id,{action:'decline'}));
   await h.call('ssh_job_submit',{hostId:'fixture',command:'sleep 10',cwd:'/srv/app',env:{APP_MODE:'staging'},timeoutSeconds:700,explanation:'让测试任务在断线后继续，并限制运行时间。'});
-  assert.equal(h.prompts.length,1);const message=h.prompts[0].params.message;
+  assert.equal(h.prompts.length,1);const message=promptText(h.prompts[0]);
   for(const piece of ['sleep 10','/srv/app','APP_MODE','staging','700','continue'])assert.ok(message.includes(piece),piece);
 });
 test('artifact inspection cannot read local files or start SSH without both path permissions',async t=>{

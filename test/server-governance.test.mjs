@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import path from 'node:path';
-import {setup,pause,purpose} from './helpers/rpc-harness.mjs';
+import {setup,pause,purpose,promptText} from './helpers/rpc-harness.mjs';
 const args={hostId:'fixture',actionId:'container.stop',args:{name:'example'},explanation:purpose};
 
 test('every remote entry fails closed before SSH and removed queue tools cannot approve',async t=>{
@@ -28,9 +28,11 @@ test('native prompt explains the action before exact command and accepting conti
  const h=await setup(t);await h.grants();
  let notified;const prompt=new Promise(resolve=>{notified=resolve;});h.setElicitation(notified);
  const executing=h.call('ssh_run_action',args);const message=await prompt;
- assert.equal(await h.count(),0);assert.ok(message.params.message.includes(purpose));
- assert.ok(message.params.message.indexOf(purpose)<message.params.message.indexOf('/usr/bin/docker'));
- assert.match(message.params.message,/example/);assert.match(message.params.message,/fixture/);
+ assert.equal(await h.count(),0);assert.equal(message.params.message,'执行目的\n'+purpose);
+ assert.ok(promptText(message).indexOf(purpose)<promptText(message).indexOf('/usr/bin/docker'));
+ assert.match(promptText(message),/example/);assert.match(promptText(message),/fixture/);
+ assert.ok(!message.params.message.includes('/usr/bin/docker'),'command is not part of the bold heading');
+ assert.match(message.params.requestedSchema.properties.confirm.description,/\/usr\/bin\/docker/);
  h.answer(message.id,{action:'accept',content:{confirm:true}});
  const response=await executing;assert.ok(response.structuredContent.task);assert.equal(response.structuredContent.approvalRequired,undefined);
  assert.equal(await h.count(),1);
@@ -96,7 +98,7 @@ test('history contains actual fixed commands, redacts sensitive output and is UI
 
 test('native host confirmation cannot authorize a broader policy changed while its prompt is open',async t=>{
  const h=await setup(t);await h.patchPolicy({grantMinutes:5});let notify;const prompt=new Promise(resolve=>{notify=resolve;});h.setElicitation(notify);
- const access=h.call('ssh_request_access',{hostIds:['fixture']});const message=await prompt;assert.match(message.params.message,/5 分钟/);
+ const access=h.call('ssh_request_access',{hostIds:['fixture']});const message=await prompt;assert.match(promptText(message),/5 分钟/);
  await h.patchPolicy({grantMinutes:1440});h.answer(message.id,{action:'accept',content:{confirm:true}});assert.equal((await access).isError,true);
  assert.deepEqual((await h.call('ssh_status')).structuredContent.state.grantedHostIds,[]);
 });
@@ -104,7 +106,7 @@ test('native host confirmation cannot authorize a broader policy changed while i
 test('file approval shows the exact content; history retains safe metadata and result, not file bodies or helper input',async t=>{
  const h=await setup(t);await h.patchPolicy({roots:[{id:'app',path:'/srv/app',read:true,write:true}]});await h.grants();
  const content='This file body must never remain in execution history.';
- h.setElicitation(m=>{assert.ok(m.params.message.includes(content));assert.ok(m.params.message.includes('/srv/app/test.txt'));h.answer(m.id,{action:'accept',content:{confirm:true}});});
+ h.setElicitation(m=>{assert.ok(promptText(m).includes(content));assert.ok(promptText(m).includes('/srv/app/test.txt'));h.answer(m.id,{action:'accept',content:{confirm:true}});});
  const written=await h.call('ssh_write_file',{hostId:'fixture',path:'/srv/app/test.txt',content,explanation:'更新测试文件的非敏感内容，确认原生审批后的写入流程。'});
  assert.equal(written.structuredContent.result.written,true);
  const read=await h.call('ssh_read_file',{hostId:'fixture',path:'/srv/app/public.txt'});assert.equal(read.structuredContent.content,'fixture readable file body');
