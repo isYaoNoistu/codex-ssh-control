@@ -79,4 +79,4 @@ Files: test/integration, .github/workflows, scripts, README.md, docs/compatibili
 - [x] Add Linux distributions/user modes and client matrix; document VM-only kernel/systemd coverage honestly.
 - [x] Record benchmark scripts and measured local results without inventing cross-platform results.
 - [x] Run complete Node and Linux helper suites, real SSH and transfer fixtures, and independent security review.
-- [ ] Merge validated work into main, install new plugin version, verify actual MCP runtime and retained settings, push authorized project update.
+- [x] Merge validated work into main, install new plugin version, verify actual MCP runtime and retained settings, push authorized project update.

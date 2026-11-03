@@ -14,6 +14,8 @@ codex-ssh-control 在本机运行，通过 OpenSSH 执行远程操作。服务�
 
 本机制品通道只支持 Windows/Linux；macOS 尚无等价本地 ACL/xattr 检查，明确拒绝并报告能力不可用，不能宣称 macOS 文件传输兼容。CI 配置提供客户端与远端发行版矩阵，实际 GitHub 作业结果须单独查看。PTY、密码存储、密钥轮换及 SFTP/SCP 协议仍未实现，详见 [基础设施契约](infrastructure-contract.md)。
 
+本机安装验证：官方 Codex 插件命令已安装并启用 0.4.0，32 个运行文件与已测试源码哈希一致；官方技能校验脚本通过。独立已安装 MCP 的 41 项工具可发现，主机与原策略字段升级前后逐项一致，未新增授权。Windows 旧 MCP 进程占用缓存，确认只有控制台子进程、没有 SSH 工作子进程后释放并重载；随后**当前真实聊天**的动态 `ssh_status.version` 已返回 **0.4.0**，5 个持久任务工具已注入，主机数量与当前未授权状态保持一致。此次验证未连接用户服务器。源码已推送 main；GitHub API 查询受到公共出口速率限制，本记录不宣称远端 CI 已通过。
+
 ## 0.3.3 项目与插件更名
 
 2026-11-03，项目、插件 ID、marketplace、MCP 服务名称、UI 标识和技能显示名称统一为 `codex-ssh-control`，安装引用为 `codex-ssh-control@codex-ssh-control`。保留原有数据目录、环境变量、技能所有权标记和 `/ssh-*` 快捷指令，以延续现有主机、权限、审计和历史。
