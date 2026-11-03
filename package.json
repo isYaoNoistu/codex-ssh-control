@@ -1,0 +1,23 @@
+{
+  "name": "codex-ssh-control",
+  "version": "0.3.3",
+  "private": true,
+  "type": "module",
+  "description": "Native Codex SSH sidebar with unified visual permissions, immediate approval and execution history",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/server.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isYaoNoistu/codex-ssh-control.git"
+  },
+  "homepage": "https://github.com/isYaoNoistu/codex-ssh-control",
+  "bugs": {
+    "url": "https://github.com/isYaoNoistu/codex-ssh-control/issues"
+  }
+}

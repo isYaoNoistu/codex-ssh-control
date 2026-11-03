@@ -1,0 +1,23 @@
+{
+  "name": "codex-ssh-control",
+  "version": "0.3.3",
+  "description": "SSH host control with visual per-chat permissions, immediate native approval and execution history.",
+  "author": {
+    "name": "codex-ssh-control contributors"
+  },
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "codex-ssh-control",
+    "shortDescription": "SSH 主机、权限、即时确认与执行历史",
+    "longDescription": "在聊天侧栏统一配置 SSH 连接与目录/命令权限。非敏感查询自动执行；修改操作先展示说明和完整命令，原生确认后立即执行。提供限时授权、审计及可查看返回结果的执行历史。服务器无需安装 Codex。",
+    "developerName": "codex-ssh-control contributors",
+    "category": "Developer Tools",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg",
+    "defaultPrompt": [
+      "打开 SSH 主机管理侧栏。"
+    ]
+  }
+}

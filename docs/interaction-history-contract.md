@@ -1,0 +1,52 @@
+# codex-ssh-control interaction and history contract
+
+This contract defines the unified host configuration view, native confirmation with operation purpose before the exact command, and execution history next to audit. Confirmation continues the original tool call after acceptance; there is no pending-approval tab or manual retry flow. Changes must preserve the security policy and existing host settings.
+
+## Component responsibilities
+
+- `ui/panel.html`: host configuration, permission forms, audit and execution history views. UI behavior is covered by `test/ui.test.mjs`.
+- `src/store.mjs`: transactional authorization, confirmation tickets, execution leases, audit and persistent history. Store tests cover migrations, ownership, races and retention.
+- `src/operation-display.mjs` and `src/ssh.mjs`: safe presentation, output scanning, bounded SSH execution and completion reporting.
+- `src/server.mjs`, `src/connection-test.mjs` and `src/file-broker.mjs`: MCP integration, native confirmation, connection diagnostics and the managed file protocol.
+- `skills/` and `hooks/`: explicit user entry points for host selection and authorization intent; they do not bypass the Store gate.
+
+Implementation tests use isolated databases, simulated SSH and local temporary files. Release verification records package and actual runtime evidence separately in [compatibility.md](compatibility.md).
+
+## Presentation module
+Exports:
+normalizeExplanation(value,{required=false,fallback=''}={}) -> plain trimmed string; required raw/mutating >=4 chars, max1200; reject C0 except LF/TAB, DEL, ANSI and bidi controls, recognized sensitive values. Missing fixed-operation purpose may use trusted catalog description. Explanation NEVER grants permission.
+operationPresentation(evaluation,explanation) -> {summary,explanation,requestedCommand,command,cwd,operation,mutating}. evaluation from policy. operation is normalized operation incl full content ONLY for native approval. requestedCommand is raw alias/command or ''; command is final evaluation.command or '' for structured file operation; cwd is effective cwd (fixed actions and aliases '/' ; raw effective cwd resolved from explicit input or the host default, otherwise '(SSH默认目录)'). File operation displays kind/path/content separately, not internal helper source/base64. Summary uses plugin-owned action labels; model purpose distinct.
+historySnapshot(evaluation,explanation,host) -> {summary,explanation,requestedCommand,command,cwd,operationSnapshot,hostSnapshot}. Remove file content; operationSnapshot for write includes bytes and SHA256 digest, otherwise normalized harmless parameters. hostSnapshot {id,name,hostname,sshAlias,username,port}, no key path. No raw stdin/helper source. Redact recognizable sensitive fields before persistence.
+sanitizeHistoryOutput({stdout='',stderr='',truncated=false,sensitiveOutput=false}={}) -> {stdout,stderr,truncated,redacted,outputNotice}. Detect prior to UTF8 truncation; stdout+stderr total32KiB; any recognized secret or sensitiveOutput hides both streams with fixed notice. No rich result object persisted; the server formats safe summaries for file reads/writes/lists.
+createOutputScanner() -> {push(channel,text),get sensitive()}. Bounded per-stream tail scanner checks all incoming decoded output BEFORE runner truncates. Recognized secrets after output cap still set sensitive. Integrate createRunner append and snapshots sensitiveOutput flag, never expose marked raw data through task_read; internal wait may pass raw to broker but history sanitizer uses flag. The output scanner reports sensitivity; permission decisions remain in the policy module.
+
+## Store native operation API
+Keep legacy public APIs for tests/backwards compatibility, but native rows MUST be excluded from legacy resolve/consume paths.
+beginNativeOperation(threadId,hostId,operation,explanation,promptToken,expectedPolicyRevision) -> ready | pending | denied. promptToken is unique random server-side nonce, not in model/tool outputs. Fully reevaluate policy and current host/grant in transaction. For allow: create permit + history atomically. For ask: create distinct native approval row bound to full normalized operation+normalized explanation hash and nonce, TTL min(120sec,grant expiry). Never reuse a pending/approved digest. Identical concurrent requests may receive separate prompts, but each requires its own distinct explicit approval and cannot consume another. Limit native pending to16 per host/thread; fail closed above. No lease/history execution row until user accepts. pending result includes approval with immutable host/policy/operation/explanation/presentation and exact ID; nonce never returned.
+completeNativeApproval(threadId,approvalId,promptToken,decision) -> ready | denied. decision 'approve'|'deny'|'cancel'. Atomic validate exact owner/nonce/pending/hostrev/policyrev/grantid/expiry; on approve reevaluate + concurrency check, then directly consumed + lease + history + audit. No intermediate approved state. On stale/limit/failure terminal invalidated/denied, never reusable. Wrong owner/nonce must not invalidate another prompt. Return ready {status,operationId,host,policy,evaluation,presentation} from same transaction. repeat decision denied.
+Server shutdown cancels every outstanding native approval before closing Store. Decline/cancel/timeout errors complete cancel. On unsupported client: cancel and fail, no waiting queue fallback. Migration schema3 invalidates legacy pending/approved. Missing earlier output never fabricated.
+
+History:
+listHistory({hostId?,threadId?,status?,beforeId?,limit?}={}) -> {items,nextCursor}; 50default100max, numeric descending ID cursor. Items: {id,operationId,threadId,hostId,summary,explanation,status,startedAt,finishedAt,exitCode,completionKnown,truncated,redacted,outputNotice}. status running|completed|failed|timed_out|cancelled|unknown. No bodies/output in list.
+getHistory(id) -> detail|null, adds hostSnapshot,operationSnapshot,requestedCommand,command,cwd,stdout,stderr,policyRevision. No actual key paths. UI-only access authenticated by token in server. Persist recent500 finished entries + active ones, prune30days finished. Expired leases become unknown/completionKnown=false; actual late finish may update once without restoring permissions.
+finishOperation(operationId,{status,exitCode,stdout?,stderr?,truncated?,sensitiveOutput?,reason?,taskId?}) creates final history results atomically with lease completion. Use sanitizeHistoryOutput ALWAYS before DB writes. Preserve metadata and no duplicate finalization. Old beginOperation leases without history remain compatible. Permit/history write failure means no SSH execution. Audit keeps excluding full command/output/body.
+
+## Server integration
+Remote command/mutating tools require explanation:string: ssh_exec, ssh_run_action, ssh_write_file, ssh_delete_file. Read/list/test can accept optional explanation and use trusted fallback. UI connection test does not invent agent explanation; server trusted description used. Existing policy operation schema unchanged. The asynchronous native gate calls beginNativeOperation. On pending immediately requestClient('elicitation/create',{mode:'form',message:meaning + exact original/final command + target/cwd + file write content,requestedSchema:{confirm:boolean}}). Only accept +confirm===true runs completeNativeApproval approve, then original operation automatically continues in SAME call. Reject/cancel/timeout -> isError with code, no SSH. No approvalRequired response or user queue. Do not expose ssh_approval_list/resolve/status tools; legacy state pending count may stay internally but not UI.
+Native prompt timeout at most120s or approval remaining TTL. Cancellation notifications should cancel pending approval and ignore late client response; do not let user-cancelled invocation execute. No mutation shortcut around native gate.
+All execution paths finish history with safe output. File read body never persisted: save path/byte count/notice. File write save bytes; list save bounded non-sensitive names if practical; never helper raw JSON or stdin. Failed file operations save safe reason; mark actual status failed. Async tasks persist final result without UI refresh. History details running show awaiting final output, no need partial capture.
+App-only history tools (require uiToken): ssh_history_list({hostId?,status?,beforeId?,uiToken}) -> {state,items,nextCursor}; ssh_history_get({historyId:integer,uiToken}) -> {state,entry}. Missing entry is error. No history output in model tools or state.
+
+## UI
+Top navigation: 主机 / 审计 / 执行历史 (next to audit). No pending-approval tab/count/API calls or approve-once/manual-retry instructions are exposed.
+Host edit and permissions enter same full host detail view replacing list, shared back/title/header and 连接设置/权限设置 tabs. Forms no independent popup frames above list. Separate save per subtab, remain on page. Preserve drafts across tabs; stale policy conflict preserves draft. New host save first then permissions. Dirty back shows keep-edit/discard choices; no needless permission flow.
+History list filters host/status and paginates; detail shows purpose then requested/final full command, metadata, exit code, stdout/stderr with clear truncated/redacted/unknown/running state. Use textContent. No execution buttons/replay. Visible running detail auto refresh until settled; request epochs prevent stale view overwrites.
+Connection test native confirmation may take120s +20s; UI tool timeout180000ms, text running/confirmation possible; refusal/cancel shown distinctly. No sidebar queue fallback. No inputs for JSON.
+
+## Validation
+
+- Exercise the presentation/scanner, native Store transactions, unified UI and MCP protocol with meaningful regression tests.
+- Verify that acceptance executes once; decline, cancellation and timeout execute nothing; duplicate or late replies are ignored; policy or grant changes invalidate open confirmations.
+- Cover history output limits, sensitivity flags, retention, UI navigation, stale responses and untrusted text rendering.
+- Run the Node suite and applicable Linux file-boundary tests. Check affected UI flows at narrow and wide widths in light and dark modes.
+- Finalize package metadata only after code is ready, then check the installed package and actual Codex runtime separately. Preserve host configuration; implementation tests do not require writes, starts or stops on a real server.

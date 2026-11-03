@@ -1,0 +1,17 @@
+{
+  "description": "将明确的 SSH 快捷指令绑定到当前宿主轮次；不执行 SSH。",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"import(require('node:url').pathToFileURL(require('node:path').join(process.env.PLUGIN_ROOT,'hooks','prompt.mjs')).href).then(m=>m.main())\"",
+            "timeout": 10,
+            "additionalContextLimit": 600
+          }
+        ]
+      }
+    ]
+  }
+}

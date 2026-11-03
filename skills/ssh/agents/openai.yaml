@@ -1,0 +1,6 @@
+interface:
+  display_name: "codex-ssh-control"
+  short_description: "管理 SSH 主机与当前聊天授权"
+  default_prompt: "使用 $ssh 打开 codex-ssh-control 管理面板，显示本聊天当前可控制的主机。"
+policy:
+  allow_implicit_invocation: false

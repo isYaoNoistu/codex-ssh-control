@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "codex-ssh-control": {
+      "command": "node",
+      "args": [
+        "./src/server.mjs"
+      ],
+      "cwd": "."
+    }
+  }
+}

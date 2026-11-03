@@ -1,0 +1,20 @@
+{
+  "name": "codex-ssh-control",
+  "interface": {
+    "displayName": "codex-ssh-control"
+  },
+  "plugins": [
+    {
+      "name": "codex-ssh-control",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
