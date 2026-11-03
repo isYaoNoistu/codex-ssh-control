@@ -143,6 +143,84 @@ test('grants multiple hosts and revokes one without passing a model supplied ide
   for (const call of h.calls.filter(call => ['ssh_grant', 'ssh_revoke'].includes(call.name))) assert.equal(call.arguments.uiToken, '__SSH_UI_TOKEN__');
 });
 
+test('same-name host cards keep identity, connection and actions associated with the exact host ID', async () => {
+  const h = await harness(initial({ hosts: [host('prod', { name: '应用服务器', defaultCwd: '/srv/prod' }), host('uat', { name: '应用服务器', defaultCwd: '/srv/uat' })], grantedHostIds: ['prod'] }));
+  const cards = h.ids.get('host-list').children;
+  assert.deepEqual(cards.map(card => card.dataset.hostId), ['prod', 'uat']);
+  for (const card of cards) {
+    const id = card.dataset.hostId;
+    assert.equal(card.tagName, 'ARTICLE');
+    assert.ok(card.getAttribute('aria-label').includes('应用服务器'));
+    assert.ok(card.getAttribute('aria-label').includes(id));
+    const address = findClass(card, 'host-address');
+    const directory = findClass(card, 'host-directory');
+    assert.match(address.textContent, new RegExp('deploy@' + id + '\\.example\\.invalid'));
+    assert.doesNotMatch(address.textContent, /\/srv\//);
+    assert.ok(directory.textContent.includes('/srv/' + id));
+    assert.equal(findData(card, 'action', id === 'prod' ? 'revoke' : 'grant'), h.findAction(id === 'prod' ? 'revoke' : 'grant', id));
+  }
+  await findData(cards[1], 'action', 'grant').click(); await h.settle();
+  const prod = h.ids.get('host-list').children.find(card => card.dataset.hostId === 'prod');
+  await findData(prod, 'action', 'revoke').click(); await h.settle();
+  assert.deepEqual(h.calls.filter(call => ['ssh_grant', 'ssh_revoke'].includes(call.name)).map(call => [call.name, call.arguments.hostIds]), [['ssh_grant', ['uat']], ['ssh_revoke', ['prod']]]);
+  assert.deepEqual(h.state().grantedHostIds, ['uat']);
+});
+
+test('host access states prioritize disabled hosts and require an effective grant for authorization', async t => {
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const states = [['active', 'granted', '本聊天已授权'], ['disabled', 'disabled', '已停用'], ['revoked', 'ungranted', '未授权'], ['expired', 'expired', '授权已到期']];
+  const h = await harness(initial({
+    hosts: states.map(([id]) => host(id, { enabled: id !== 'disabled' })),
+    grantedHostIds: ['active', 'disabled', 'expired'],
+    grants: states.map(([hostId]) => ({ hostId, expiresAt: hostId === 'expired' ? now - 1 : now + (hostId === 'revoked' ? 60000 : 120000), policyRevision: 1 })),
+  }));
+  assert.equal(h.ids.get('grant-count').textContent, '1');
+  for (const [id, status, label] of states) {
+    const card = h.ids.get('host-list').children.find(row => row.dataset.hostId === id);
+    assert.ok(card, 'Missing card for ' + id);
+    const state = findData(card, 'status', status);
+    assert.ok(state, 'Expected ' + status + ' access state for ' + id);
+    assert.ok(state.textContent.includes(label));
+    if (status === 'granted') assert.match(state.textContent, /至/);
+    else assert.doesNotMatch(card.textContent, /授权至|有效至/);
+    assert.equal(h.findAction('test', id).disabled, status !== 'granted');
+  }
+  assert.equal(h.findAction('grant', 'revoked').disabled, false);
+  await h.findAction('edit', 'revoked').click();
+  assert.match(h.ids.get('detail-status').textContent, /未授权/);
+  assert.doesNotMatch(h.ids.get('detail-status').textContent, /授权至|有效至/);
+  const before = structuredClone(h.state());
+  now += 60001;
+  h.intervals[0](); await h.settle();
+  assert.deepEqual(h.state(), before);
+  assert.equal(h.ids.get('grant-count').textContent, '1');
+  const revoked = h.ids.get('host-list').children.find(card => card.dataset.hostId === 'revoked');
+  assert.ok(findData(revoked, 'status', 'expired'), 'Clock-only expiry must refresh a card even when effective grant IDs do not change');
+});
+
+test('grant settings start collapsed and opening or closing them does not mutate authorization', async () => {
+  const h = await harness(initial({ grantedHostIds: ['prod'] }));
+  const settings = h.ids.get('grant-settings');
+  assert.ok(settings, 'Authorization duration belongs in a disclosure');
+  assert.equal(settings.tagName, 'DETAILS');
+  assert.equal(settings.open, false);
+  assert.equal(h.ids.has('grant-chips'), false);
+  const before = structuredClone(h.state()), calls = h.calls.length;
+  h.ids.get('grant-minutes').value = '15';
+  h.ids.get('grant-minutes').onchange();
+  assert.equal(h.ids.get('grant-duration-label').textContent, '15 分钟');
+  for (const open of [true, false]) {
+    settings.open = open;
+    settings.ontoggle?.({ target: settings });
+    await h.settle();
+  }
+  assert.deepEqual(h.state(), before);
+  assert.equal(h.calls.length, calls);
+  assert.equal(h.ids.get('grant-minutes').disabled, false);
+  assert.equal(h.ids.get('grant-minutes').value, '15');
+});
+
 test('saves a new SSH alias host with disabled default and mutually exclusive connection fields', async () => {
   const h = await harness(initial({ hosts: [] }));
   await h.ids.get('add-host').click();
@@ -514,6 +592,10 @@ function findData(root, key, value) {
   if (root.dataset?.[key] === value) return root;
   for (const child of root.children ?? []) { const found = findData(child, key, value); if (found) return found; }
 }
+function findClass(root, name) {
+  if (root.className?.split(/\s+/).includes(name)) return root;
+  for (const child of root.children ?? []) { const found = findClass(child, name); if (found) return found; }
+}
 
 test('injects UI capability only into UI tools and never sends chat identity in arguments', async () => {
   const h = await harness(initial(), governanceReply);
@@ -693,6 +775,9 @@ test('grant expiration replaces enabled test controls even when the status paylo
   assert.equal(h.ids.get('grant-count').textContent, '0');
   assert.equal(h.findAction('test', 'prod').disabled, true);
   assert.match(h.ids.get('host-list').textContent, /已到期/);
+  const card = h.ids.get('host-list').children.find(row => row.dataset.hostId === 'prod');
+  assert.ok(card, 'Expired host must retain its card identity');
+  assert.ok(findData(card, 'status', 'expired'), 'Expired authorization must remain visible on its own host card');
   await h.findAction('test', 'prod').click();
   assert.equal(h.calls.some(call => call.name === 'ssh_test_connection'), false);
 });

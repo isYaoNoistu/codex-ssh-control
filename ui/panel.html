@@ -77,26 +77,28 @@ h3 { font-size: 13px; font-weight: 600; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 24px; }
 .tabs button { background: transparent; color: var(--muted); border-color: transparent; padding: 6px 12px; }
 .tabs button[aria-selected="true"] { background: var(--surface); color: var(--fg); font-weight: 600; }
-.grant-block { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); margin-bottom: 24px; }
+.grant-block { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 24px; }
 .section-label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.section-label h2 { font-size: 13px; }
-.count { background: var(--bg); color: var(--muted); min-width: 22px; padding: 1px 6px; border-radius: 6px; text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; }
-.thread { margin-left: auto; color: var(--muted); font: 10px var(--mono); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.chips:empty { margin: 0; }
-.chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 5px 4px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); font-size: 12px; }
-.chip>span { overflow-wrap: anywhere; min-width: 0; }
-.chip.inactive { color: var(--muted); }
-.chip button { min-height: 24px; width: 24px; flex: none; border: 0; background: transparent; padding: 0; color: var(--muted); font-size: 17px; line-height: 1; }
-.grant-empty { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
-.grant-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; font-size: 12px; }
+.section-label h2 { font-size: 12px; color: var(--muted); font-weight: 400; }
+.grant-total { font-size: 12px; color: var(--fg); }
+.grant-total::before { content: "·"; margin-right: 8px; color: var(--muted); }
+.grant-total strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+.grant-settings { margin-left: auto; font-size: 12px; max-width: 100%; }
+.grant-settings>summary { list-style: none; color: var(--muted); padding: 5px 0 5px 6px; }
+.grant-settings>summary::-webkit-details-marker { display: none; }
+.grant-settings>summary::after { content: ""; display: inline-block; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin: 0 2px 3px 10px; }
+.grant-settings[open] { flex-basis: 100%; }
+.grant-settings[open]>summary { width: fit-content; margin-left: auto; }
+.grant-settings[open]>summary::after { transform: rotate(225deg); margin-bottom: 0; }
+.grant-empty { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--muted); }
+.grant-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 8px; font-size: 12px; }
 .grant-options select { margin-left: auto; padding: 4px 8px; min-height: 30px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: var(--control-radius); }
 .grant-options>span { width: 100%; color: var(--muted); font-size: 11px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.host-list { margin-bottom: 20px; }
-.host-row { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.host-list { display: grid; gap: 14px; margin: 14px 0 20px; }
+.host-row { min-width: 0; padding: 16px; border: 1px solid var(--line); border-color: color-mix(in srgb, var(--fg) 16%, var(--bg)); border-radius: 12px; background: var(--bg); }
 .host-heading { display: flex; align-items: center; gap: 12px; }
-.host-symbol { width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center; background: var(--surface); color: var(--muted); font: 13px var(--mono); }
+.host-symbol { width: 34px; height: 34px; flex: none; border: 1px solid var(--line); border-radius: 9px; display: grid; place-items: center; background: var(--surface); color: var(--muted); font: 13px var(--mono); }
 .host-heading-text { flex: 1; min-width: 0; }
 .host-name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .host-id { font: 11px/1.6 var(--mono); color: var(--muted); }
@@ -105,12 +107,23 @@ h3 { font-size: 13px; font-weight: 600; }
 .switch[aria-checked="true"] { background: var(--fg); box-shadow: none; }
 .switch[aria-checked="true"]::after { transform: translateX(12px); }
 .switch[aria-checked="true"]:hover:not(:disabled) { background: var(--fg); opacity: .85; }
-.host-address { margin: 10px 0 5px 46px; color: var(--muted); font: 11px/1.7 var(--mono); overflow-wrap: anywhere; }
-.host-policy-summary { margin: 0 0 12px 46px; color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.host-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 14px 0 12px; font-size: 11px; }
+.host-state-label { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; color: var(--muted); background: color-mix(in srgb, var(--fg) 5%, var(--bg)); }
+.host-state-label::before { content: ""; width: 5px; height: 5px; flex: none; border-radius: 50%; background: currentColor; }
+.host-state[data-status="granted"] .host-state-label { color: var(--success); background: color-mix(in srgb, var(--success) 8%, var(--bg)); }
+.host-state[data-status="expired"] .host-state-label { color: var(--danger); background: var(--danger-soft); }
+.host-expiry { color: var(--muted); }
+.host-endpoint { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 6px; margin-bottom: 10px; font-size: 11px; }
+.host-field-label { color: var(--muted); line-height: 1.7; }
+.host-address, .host-directory { margin: 0; font: 12px/1.6 var(--mono); overflow-wrap: anywhere; }
+.host-directory { color: var(--muted); }
+.host-policy-summary { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.host-policy-summary:empty { display: none; }
 .host-policy-summary.expired { color: var(--danger); }
-.host-actions { margin-left: 46px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.host-footer { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.host-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .host-actions .access { margin-right: auto; }
-.host-more { margin: 8px 0 0 46px; font-size: 12px; }
+.host-more { margin: 6px 0 0; font-size: 12px; }
 .host-more>summary { width: fit-content; padding: 5px 0; color: var(--muted); font-size: 11px; }
 .host-more>summary:hover { color: var(--fg); }
 .host-more>summary[aria-disabled="true"] { opacity: .4; cursor: default; }
@@ -218,7 +231,7 @@ h3 { font-size: 13px; font-weight: 600; }
 #history-detail-content .event-title { font-size: 16px; }
 #discard-confirmation p { margin: 0 0 12px; }
 #discard-confirmation .form-actions { border: 0; margin: 0; padding: 0; }
-.connection-test { margin: 14px 0 0 46px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.connection-test { margin: 14px 0 0; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 12px; overflow-wrap: anywhere; }
 .connection-test-title { font-size: 12px; font-weight: 600; }
 .connection-test[data-status="success"] .connection-test-title { color: var(--success); }
 .connection-test[data-status="failure"] { background: var(--danger-soft); }
@@ -241,8 +254,9 @@ h3 { font-size: 13px; font-weight: 600; }
   .topbar { margin-bottom: 18px; }
   .tabs { margin-bottom: 20px; }
   .tabs button { padding: 6px 10px; }
-  .grant-block { padding: 14px; }
-  .host-address, .host-actions, .host-policy-summary, .host-more, .connection-test { margin-left: 0; }
+  .grant-block { gap: 8px; }
+  .grant-settings>summary { font-size: 11px; }
+  .host-row { padding: 14px; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .field { grid-column: 1 / -1; }
   .form-actions button { flex: 1; }
@@ -251,7 +265,6 @@ h3 { font-size: 13px; font-weight: 600; }
   .row-options { gap: 10px; }
   .history-purpose, .history-block pre { padding: 12px; }
   #history-view>.field { grid-template-columns: auto minmax(0, 180px); }
-  .thread { max-width: 96px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; scroll-behavior: auto !important; } }
 @media (forced-colors: active) { button, input, select, textarea, .switch { border: 1px solid ButtonText; } .switch[aria-checked="true"] { background: Highlight; } .switch::after { background: ButtonText; } }
@@ -264,7 +277,11 @@ h3 { font-size: 13px; font-weight: 600; }
   <nav class="tabs" role="tablist" aria-label="SSH 管理"><button id="tab-hosts" type="button" role="tab" aria-controls="hosts-view" aria-selected="true">主机</button><button id="tab-audit" type="button" role="tab" aria-controls="audit-view" aria-selected="false">审计</button><button id="tab-history" type="button" role="tab" aria-controls="history-view" aria-selected="false">执行历史</button></nav>
   <div id="hosts-view" role="tabpanel" aria-labelledby="tab-hosts">
   <div id="host-list-view">
-  <section class="grant-block" aria-labelledby="grant-title"><div class="section-label"><h2 id="grant-title">当前聊天授权</h2><span id="grant-count" class="count">0</span><span id="thread-label" class="thread" title="当前聊天">—</span></div><div id="grant-chips" class="chips"></div><p id="grant-empty" class="grant-empty">尚未授权主机。在下方选择主机，即可授权给当前聊天。</p><div class="grant-options"><label for="grant-minutes">本次授权时长</label><select id="grant-minutes"><option value="15">15 分钟</option><option value="60" selected>1 小时</option><option value="240">4 小时</option><option value="1440">24 小时</option></select><span>以主机设置的上限为准</span></div></section>
+  <section class="grant-block" aria-labelledby="grant-title">
+    <div class="section-label"><h2 id="grant-title">当前聊天</h2><span class="grant-total"><strong id="grant-count">0</strong> 台已授权</span><span id="thread-label" hidden></span></div>
+    <details id="grant-settings" class="grant-settings"><summary>授权时长 · <span id="grant-duration-label">1 小时</span></summary><div class="grant-options"><label for="grant-minutes">新授权 / 续期时长</label><select id="grant-minutes"><option value="15">15 分钟</option><option value="60" selected>1 小时</option><option value="240">4 小时</option><option value="1440">24 小时</option></select><span>以主机设置的上限为准；调整此项不会改变已有授权。</span></div></details>
+    <p id="grant-empty" class="grant-empty">尚未授权主机。在下方选择主机，即可授权给当前聊天。</p>
+  </section>
   <section aria-labelledby="catalog-title"><div class="section-heading"><h2 id="catalog-title">已配置的主机</h2><button id="add-host" type="button" class="small" disabled>＋ 添加主机</button></div>
     <section id="delete-confirmation" class="delete-box" hidden role="alertdialog" aria-labelledby="delete-title"><h2 id="delete-title">删除主机</h2><p id="delete-description"></p><div class="delete-actions"><button id="cancel-delete" type="button">取消</button><button id="confirm-delete" type="button" class="danger">确认删除</button></div></section>
     <div id="empty-catalog" class="empty" hidden><div class="empty-mark" aria-hidden="true">&gt;_</div><strong>还没有配置主机</strong><span class="hint">添加服务器地址，或复用本机 SSH 主机别名。</span></div>
@@ -451,30 +468,22 @@ h3 { font-size: 13px; font-weight: 600; }
     $('grant-count').textContent = String(enabledGrants.length);
     $('thread-label').textContent = state.threadId ? state.threadId.slice(0, 8) + '…' + state.threadId.slice(-4) : '尚未识别';
     $('thread-label').title = state.threadId || '尚未识别当前聊天';
-    $('grant-empty').hidden = grantedHosts.length > 0;
-    const chips = grantedHosts.map(host => {
-      const chip = document.createElement('span'); chip.className = 'chip' + (host.enabled ? '' : ' inactive');
-      const grant = state.grants.find(item => item.hostId === host.id);
-      chip.append(text('span', (host.name || host.id) + (host.enabled ? (grant ? ' · 至 ' + timeLabel(grant.expiresAt) : '') : ' · 已停用')));
-      const revoke = action('×', 'revoke', host, () => mutate('ssh_revoke', { hostIds: [host.id] }));
-      revoke.setAttribute('aria-label', '撤销本聊天对 ' + (host.name || host.id) + ' 的授权');
-      chip.append(revoke); return chip;
-    });
-    $('grant-chips').replaceChildren(...chips);
+    $('grant-empty').hidden = enabledGrants.length > 0;
     renderHostList(granted);
     $('shortcut-help').textContent = state.shortcutHelp || '/ssh-主机标识';
     renderGovernance();
   }
   function renderHostList(granted) {
     // Leave the existing DOM and keyboard focus intact on unchanged polling replies.
-    const signature = JSON.stringify([state.threadId, state.hosts, state.policies, state.grants, [...granted], canEdit(), [...connectionTests]]);
+    const signature = JSON.stringify([state.threadId, state.hosts, state.policies, state.grants, [...granted], state.hosts.map(host => hostAccessState(host).status), canEdit(), [...connectionTests]]);
     if (signature === renderedHostList) return;
     // Native details toggle events are async. Snapshot the DOM before replacing it.
     for (const [id, more] of hostDisclosures) more.open ? expandedHostActions.add(id) : expandedHostActions.delete(id);
     hostDisclosures.clear();
     $('empty-catalog').hidden = state.hosts.length > 0;
     $('host-list').replaceChildren(...state.hosts.map(host => {
-      const row = document.createElement('article'); row.className = 'host-row';
+      const row = document.createElement('article'); row.className = 'host-row'; row.dataset.hostId = host.id;
+      row.setAttribute('aria-label', (host.name || host.id) + ' · ' + host.id);
       const heading = document.createElement('div'); heading.className = 'host-heading';
       heading.append(text('span', '>_', 'host-symbol'));
       const label = document.createElement('div'); label.className = 'host-heading-text';
@@ -484,7 +493,13 @@ h3 { font-size: 13px; font-weight: 600; }
       toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-checked', String(Boolean(host.enabled))); toggle.setAttribute('aria-label', (host.enabled ? '停用 ' : '启用 ') + (host.name || host.id));
       toggle.title = host.enabled ? '已启用，点击停用' : '已停用，点击启用'; heading.append(toggle); row.append(heading);
       const address = host.sshAlias ? 'SSH · ' + host.sshAlias : (host.username ? host.username + '@' : '') + host.hostname + (host.port && host.port !== 22 ? ':' + host.port : '');
-      row.append(text('div', address + (host.defaultCwd ? '  ·  ' + host.defaultCwd : ''), 'host-address'), policySummary(host));
+      const access = hostAccessState(host), status = text('div', '', 'host-state'); status.dataset.status = access.status;
+      status.append(text('span', access.label, 'host-state-label'));
+      if (access.expiresAt) status.append(text('span', '有效至 ' + timeLabel(access.expiresAt), 'host-expiry'));
+      const endpoint = text('div', '', 'host-endpoint');
+      endpoint.append(text('span', '连接', 'host-field-label'), text('div', address, 'host-address'));
+      if (host.defaultCwd) endpoint.append(text('span', '目录', 'host-field-label'), text('div', host.defaultCwd, 'host-directory'));
+      row.append(status, endpoint, policySummary(host, false));
       const actions = document.createElement('div'); actions.className = 'host-actions';
       if (granted.has(host.id)) {
         const revoke = action('撤销授权', 'revoke', host, () => mutate('ssh_revoke', { hostIds: [host.id] }), 'small access'); actions.append(revoke);
@@ -505,7 +520,8 @@ h3 { font-size: 13px; font-weight: 600; }
       secondary.append(test, action('连接设置', 'edit', host, () => openEditor(host), 'small'));
       if (granted.has(host.id)) secondary.append(action('续期授权', 'renew', host, () => grantHost(host), 'small'));
       secondary.append(action('删除主机', 'delete', host, () => confirmRemove(host), 'quiet small danger'));
-      more.append(summary, secondary); row.append(actions, more);
+      more.append(summary, secondary);
+      const footer = text('div', '', 'host-footer'); footer.append(actions, more); row.append(footer);
       const result = connectionResult(host.id); if (result) row.append(result);
       return row;
     }));
@@ -623,18 +639,23 @@ h3 { font-size: 13px; font-weight: 600; }
     const requested = Number($('grant-minutes').value || 60);
     return mutate('ssh_grant', { hostIds: [host.id], minutes: Math.min(requested, limit) });
   }
-  function policySummary(host) {
-    const record = state.policies.find(item => item.hostId === host.id), grant = state.grants.find(item => item.hostId === host.id);
+  function hostAccessState(host) {
+    const grant = state.grants.find(item => item.hostId === host.id);
+    if (!host.enabled) return { status: 'disabled', label: '已停用' };
+    if (activeGrant(host.id)) return { status: 'granted', label: '本聊天已授权', expiresAt: grant?.expiresAt };
+    if (grant && grant.expiresAt <= Date.now()) return { status: 'expired', label: '授权已到期' };
+    return { status: 'ungranted', label: '未授权' };
+  }
+  function policySummary(host, includeAccess = true) {
+    const record = state.policies.find(item => item.hostId === host.id), access = hostAccessState(host);
     const parts = [];
     if (record) {
       const roots = record.policy.roots || [];
       parts.push('读取 ' + roots.filter(root => root.read).length + ' · 写入 ' + roots.filter(root => root.write).length + ' 个目录');
       parts.push(record.policy.mode === 'approval' ? '原始 shell 逐次审批' : '受限命令');
     }
-    if (grant) parts.push(grant.expiresAt <= Date.now() ? '授权已到期' : '授权至 ' + timeLabel(grant.expiresAt));
-    else if (activeGrant(host.id)) parts.push('已授权当前聊天');
-    else parts.push('当前聊天未授权');
-    const el = text('div', parts.join(' · '), 'host-policy-summary' + (grant && grant.expiresAt <= Date.now() ? ' expired' : ''));
+    if (includeAccess) parts.push(access.label + (access.expiresAt ? ' · 有效至 ' + timeLabel(access.expiresAt) : ''));
+    const el = text('div', parts.join(' · '), 'host-policy-summary' + (includeAccess && access.status === 'expired' ? ' expired' : ''));
     return el;
   }
   function option(value, label) { const el = text('option', label); el.value = value; return el; }
@@ -894,6 +915,7 @@ h3 { font-size: 13px; font-weight: 600; }
   $('preview-section').onkeydown = event => { if (event.key === 'Enter' && event.target.tagName === 'INPUT') { event.preventDefault(); previewPolicy(); } };
   $('refresh-audit').onclick = () => loadCollection('audit'); $('audit-host').onchange = $('audit-result').onchange = () => loadCollection('audit'); $('audit-more').onclick = () => loadCollection('audit', true);
   $('grant-minutes').value = '60';
+  $('grant-minutes').onchange = () => { $('grant-duration-label').textContent = ({ 15: '15 分钟', 60: '1 小时', 240: '4 小时', 1440: '24 小时' })[$('grant-minutes').value] || '选择时长'; };
 
   let jumpRows = [], keyEditors = [], targetKeys = null, localCapabilities = null;
   const connectionInputIds = ['connection-mode', 'native-trust', 'connection-timeout', 'connection-keepalive', 'connection-count', 'connection-persist', 'connection-pooling'];
@@ -1085,7 +1107,7 @@ h3 { font-size: 13px; font-weight: 600; }
     render();
     try {
       if (window.parent === window) throw new Error('请从 Codex 聊天中打开 SSH 主机面板。');
-      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.4.5' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
+      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.4.6' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
       hostStyle(result.hostContext); notify('ui/notifications/initialized'); connected = true; controls();
       await refresh();
       timer = setInterval(() => { if (!document.hidden) refresh(true); }, 5000);
