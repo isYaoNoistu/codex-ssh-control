@@ -50,6 +50,7 @@ test('real stdio isolates chats, exposes native UI, validates inputs and request
   const resources=await request('resources/list',{});
   const resource=await request('resources/read',{uri:resources.resources[0].uri});
   assert.equal(resource.contents[0].mimeType,'text/html;profile=mcp-app');
+  assert.deepEqual(resource.contents[0]._meta.ui.permissions,{clipboardWrite:{}});
   assert.ok(resource.contents[0].text.includes('ui/initialize'));
  }finally{
   child.stdin.end();await new Promise(resolve=>{child.once('close',resolve);setTimeout(()=>{child.kill();resolve();},1000).unref();});

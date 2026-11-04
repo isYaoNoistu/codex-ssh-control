@@ -67,16 +67,22 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 h1 { margin: 0; font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px; }
 h2 { margin: 0; font-size: 14px; line-height: 1.5; font-weight: 600; }
 h3 { font-size: 13px; font-weight: 600; }
-.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+.topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .subtitle { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .refresh { width: 32px; flex: none; padding: 7px; border-color: transparent; background: transparent; }
 .refresh svg { width: 16px; height: 16px; display: block; }
-.statusline { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11px; color: var(--muted); }
+.statusline { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; color: var(--muted); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 .status-dot.ready { background: var(--success); }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 24px; }
-.tabs button { background: transparent; color: var(--muted); border-color: transparent; padding: 6px 12px; }
-.tabs button[aria-selected="true"] { background: var(--surface); color: var(--fg); font-weight: 600; }
+.tabs { position: sticky; top: 0; z-index: 2; display: flex; gap: 4px; background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px 0 10px; margin-bottom: 18px; }
+.tabs button { flex: 1; background: transparent; color: var(--muted); border-color: transparent; padding: 6px 10px; }
+.tabs button[aria-selected="true"] { background: color-mix(in srgb,var(--fg) 7%,var(--bg)); color: var(--fg); font-weight: 600; }
+html { scroll-padding-top: 58px; }
+.route-back { display:inline-flex; align-items:center; gap:7px; min-height:30px; margin:0; padding:4px 8px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--muted); font-size:12px; }
+.route-back::before,.history-destination::after { content:""; display:block; flex:none; width:6px; height:6px; border-top:1.5px solid currentColor; border-right:1.5px solid currentColor; }
+.route-back::before { transform:rotate(-135deg); }
+.route-back:hover:not(:disabled) { color:var(--fg); background:var(--surface); }
+.detail-toolbar .route-back { padding-left:6px; }
 .grant-block { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 24px; }
 .section-label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .section-label h2 { font-size: 12px; color: var(--muted); font-weight: 400; }
@@ -148,13 +154,6 @@ h3 { font-size: 13px; font-weight: 600; }
 .detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 18px; }
 .detail-toolbar .quiet { padding-left: 0; }
 .draft-note { font-size: 11px; color: var(--muted); }
-.detail-header { margin-bottom: 16px; }
-.detail-header h2 { font-size: 18px; letter-spacing: -.2px; }
-.detail-header p { margin: 4px 0; }
-.detail-header .host-policy-summary { margin: 4px 0 0; }
-.detail-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--line); margin: 0 0 24px; }
-.detail-tabs button { padding: 8px 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); background: transparent; }
-.detail-tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
 .host-pane { padding: 0; margin: 0; border: 0; }
 .settings-group { padding: 0 0 24px; margin: 0; border: 0; }
 .settings-group>h3 { margin: 0 0 16px; }
@@ -198,8 +197,6 @@ h3 { font-size: 13px; font-weight: 600; }
 .action-rule .argument-rule { flex-basis: 100%; }
 .action-category { margin: 22px 0 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .limits-grid { padding-top: 4px; }
-.policy-footer { border-top: 1px solid var(--line); padding-top: 8px; }
-.policy-footer .form-actions { border-top: 0; padding-top: 0; }
 .preview-run { margin-top: 16px; }
 .result-box { padding: 14px; margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 12px; overflow-wrap: anywhere; }
 .result-box[data-decision="deny"] { background: var(--danger-soft); color: var(--danger); }
@@ -220,13 +217,23 @@ h3 { font-size: 13px; font-weight: 600; }
 .event-note { font-size: 11px !important; color: var(--muted); }
 .loading-note { color: var(--muted); font-size: 12px; padding: 16px 0; }
 #audit-more, #history-more { margin-top: 16px; }
-#history-view>.field { display: grid; grid-template-columns: auto minmax(0, 200px); align-items: center; justify-content: space-between; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+#history-kind-bar,.history-list-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 18px; }
+#history-kind-bar h2,.history-list-heading h2 { font-size:17px; }
+#history-kind-bar select { width:auto; max-width:54%; min-height:32px; border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:12px; background:var(--bg); color:var(--fg); }
+#history-view:has(#history-list-view:not([hidden]),#history-detail-view:not([hidden]),#infrastructure-view:not([hidden]) #infrastructure-back:not([hidden])) #history-kind-bar { display:none; }
 .history-purpose { margin: 20px 0; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .history-purpose h3, .history-block h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 .history-purpose p { font-size: 13px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.history-metadata { color: var(--muted); font-size: 12px; line-height: 1.9; padding-bottom: 20px; border-bottom: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
-.history-block { margin: 22px 0; }
-.history-block pre { margin: 0; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font: 12px/1.75 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
+.history-metadata { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:4px 14px; margin:12px 0 16px; padding-bottom:16px; border-bottom:1px solid var(--line); font-size:12px; line-height:1.65; }
+.history-metadata dt { color:var(--muted); }
+.history-metadata dd { margin:0; overflow-wrap:anywhere; }
+.host-availability { white-space:nowrap; }
+.history-block { margin: 14px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.history-block-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 38px; padding: 4px 10px 4px 14px; border-bottom: 1px solid var(--line); }
+.history-block-head h3 { margin: 0; }
+.history-copy { flex: none; min-width: 48px; }
+.history-block .hint { margin: 8px 14px 0; }
+.history-block pre { margin: 0; padding: 12px 14px; font: 12px/1.75 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
 #history-detail-content>.event-top { align-items: center; }
 #history-detail-content .event-title { font-size: 16px; }
 #discard-confirmation p { margin: 0 0 12px; }
@@ -264,19 +271,84 @@ h3 { font-size: 13px; font-weight: 600; }
   .filter-grid>.field { grid-column: auto; }
   .row-options { gap: 10px; }
   .history-purpose, .history-block pre { padding: 12px; }
-  #history-view>.field { grid-template-columns: auto minmax(0, 180px); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; scroll-behavior: auto !important; } }
 @media (forced-colors: active) { button, input, select, textarea, .switch { border: 1px solid ButtonText; } .switch[aria-checked="true"] { background: Highlight; } .switch::after { background: ButtonText; } }
-.history-host-grid {display:grid; gap:8px; margin:12px 0}
-.history-host-grid button {display:grid; text-align:left; gap:3px; padding:12px; overflow-wrap:anywhere}
+/* Host settings */
+.detail-header { display: flex; align-items: center; gap: 12px; margin: 0 0 17px; }
+.detail-header .host-symbol { width: 38px; height: 38px; font-size: 15px; }
+.detail-identity { min-width: 0; }
+.detail-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.detail-name h2 { font-size: 18px; line-height: 1.35; letter-spacing: -.2px; }
+.detail-name .host-state { margin: 0; }
+.detail-name .host-state-label { padding: 1px 7px; }
+.detail-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 9px; margin-top: 3px; color: var(--muted); font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
+#detail-id { display: inline-flex; align-items: center; gap: 9px; }
+#detail-id::after { content: ""; width: 1px; height: 10px; background: var(--line); }
+.detail-tabs { display: flex; gap: 18px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+.detail-tabs button { min-height: 34px; padding: 5px 0 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 12px; }
+.detail-tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+.permission-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 3px 12px; margin: 0 0 9px; }
+.permission-heading h3 { margin: 0; font-size: 14px; }
+#policy-revision { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.mode-list { min-width: 0; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mode-choice { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.mode-choice:last-child { border-bottom: 0; }
+.mode-choice:hover, .mode-choice:has(input:checked) { background: var(--surface); }
+.mode-choice:has(input:disabled) { cursor: default; }
+.mode-choice input { margin: 3px 0 0; width: 15px; height: 15px; }
+.mode-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.mode-title strong { font-weight: 550; }
+.mode-title small { color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 10px; line-height: 1.5; }
+.mode-hint { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.mode-elevation { margin-top: 10px; padding: 12px; border: 1px solid color-mix(in srgb, var(--danger) 26%, var(--line)); border-radius: 8px; background: var(--danger-soft); color: var(--fg); font-size: 12px; }
+.mode-elevation strong { color: var(--danger); }
+.mode-elevation p { margin: 5px 0 0; }
+.mode-elevation .checkbox { margin: 10px 0 0; }
+#advanced-settings { margin-top: 14px; border: 1px solid var(--line); border-radius: 9px; padding: 0 12px; }
+#advanced-settings>summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0; padding: 11px 22px 11px 0; }
+#advanced-settings>summary::after { right: 3px; top: calc(50% - 4px); }
+#advanced-settings[open]>summary { border-bottom: 1px solid var(--line); }
+.advanced-title { font-weight: 550; }
+.advanced-hint { color: var(--muted); font-size: 11px; font-weight: 400; }
+.policy-footer { margin-top: 14px; }
+.policy-footer .form-actions { align-items: center; margin: 0; padding: 0; gap: 6px; border: 0; }
+.policy-footer .form-actions button { flex: 0 1 auto; }
+#policy-change-state { margin-right: auto; color: var(--muted); font-size: 11px; }
+#policy-save-notice { margin: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.history-caption { font-size:12px; color:var(--muted); margin:0 0 9px; }
+.history-destinations { border:1px solid var(--line); border-radius:12px; padding:0 12px; }
+.history-host-grid { display:grid; }
+.history-destination { display:grid; grid-template-columns:30px minmax(0,1fr) 10px; gap:0 10px; align-items:center; width:100%; padding:11px 2px; border:0; border-radius:0; text-align:left; overflow-wrap:anywhere; }
+.history-destination + .history-destination,.history-host-grid:not(:empty) + .history-destination { border-top:1px solid var(--line); }
+.history-icon { grid-area:1/1/3/2; width:30px; height:30px; display:grid; place-items:center; border-radius:8px; background:color-mix(in srgb,var(--fg) 6%,var(--bg)); color:var(--muted); font:600 15px/1 var(--mono); }
+.history-destination::after { grid-area:1/3/3/4; transform:rotate(45deg); color:var(--muted); }
+.history-destination>strong,.history-destination>.hint { grid-column:2; min-width:0; }
+.history-destination>strong { font-size:13px; font-weight:550; color:var(--fg); }
+.history-destination>.hint { font-size:11px; font-weight:400; }
+#lifecycle-panel { margin:18px 0 0; padding:13px 14px; border:1px solid var(--line); border-radius:10px; }
+#history-host-back { margin-bottom:6px; }
+.history-list-heading { margin-bottom:12px; }
+.history-filters { border:1px solid var(--line); border-radius:10px; padding:0 12px; }
+.history-filters summary { display:flex; align-items:center; gap:8px; list-style:none; min-height:40px; font-size:12px; font-weight:550; }
+.history-filters summary::-webkit-details-marker { display:none; }
+.history-filters summary::after { content:""; width:6px; height:6px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); color:var(--muted); margin:0 2px 3px 5px; }
+.history-filters[open] summary::after { transform:rotate(225deg); margin-bottom:0; }
+#history-filter-summary { margin-left:auto; font-weight:400; color:var(--muted); text-align:right; min-width:0; overflow-wrap:anywhere; }
+.history-filters .filter-grid { margin:0; padding:12px 0; border-top:1px solid var(--line); }
+#history-filter-reset { margin:0 0 10px auto; display:block; }
+#history-list .event-card { padding:14px 0; }
+#history-list .event-meta { margin:5px 0; }
+#history-list .event-card .record-link { border-color:transparent; color:var(--muted); background:transparent; padding:3px 0; }
+#history-list .record-link::after { content:" ›"; }
 .event-badge[data-tone=success] {color:var(--success); background:color-mix(in srgb,var(--success) 11%,var(--bg)); border:1px solid color-mix(in srgb,var(--success) 32%,var(--bg))}
 .event-badge[data-tone=failure] {color:var(--danger); background:var(--danger-soft)}
 .event-badge[data-tone=warning] {color:light-dark(#795300,#f2cf82); background:light-dark(#fff3cd,#403822)}
 </style>
 </head>
 <body><main class="shell">
-  <header class="topbar"><div><h1>SSH 主机</h1><p class="subtitle">管理主机、访问权限和执行记录</p><div class="statusline"><span id="status-dot" class="status-dot"></span><span id="connection-status" role="status">正在连接…</span></div></div><button id="refresh" class="refresh" type="button" title="刷新主机与授权" aria-label="刷新主机与授权" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/></svg></button></header>
+  <header class="topbar"><h1>SSH 主机</h1><div class="statusline"><span id="status-dot" class="status-dot"></span><span id="connection-status" role="status">正在连接…</span></div><button id="refresh" class="refresh" type="button" title="刷新主机与授权" aria-label="刷新主机与授权" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/></svg></button></header>
   <div id="error-banner" class="banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" type="button" aria-label="关闭提示">×</button></div>
   <div id="identity-notice" class="identity-notice" hidden>正在确认当前聊天，暂时无法更改主机与授权。</div>
   <nav class="tabs" role="tablist" aria-label="SSH 管理"><button id="tab-hosts" type="button" role="tab" aria-controls="hosts-view" aria-selected="true">主机</button><button id="tab-audit" type="button" role="tab" aria-controls="audit-view" aria-selected="false">审计</button><button id="tab-history" type="button" role="tab" aria-controls="history-view" aria-selected="false">执行历史</button></nav>
@@ -294,7 +366,17 @@ h3 { font-size: 13px; font-weight: 600; }
   </section>
   <details class="shortcut"><summary>在聊天中使用快捷指令</summary><p class="hint">发送 <code id="shortcut-help">/ssh-主机标识</code>，可一次指定多台。新聊天需要重新授权。</p></details>
   </div>
-  <section id="host-detail-view" class="host-detail" hidden aria-labelledby="detail-title"><div class="detail-toolbar"><button id="detail-back" type="button" class="quiet small">← 返回主机列表</button><span id="detail-dirty" class="draft-note" hidden>有未保存修改</span></div><header class="detail-header"><h2 id="detail-title">主机设置</h2><p id="detail-address" class="hint"></p><div id="detail-status"></div></header><div id="discard-confirmation" class="identity-notice" hidden role="alert"><p>连接或权限设置尚未保存。返回列表将放弃这些修改。</p><div class="form-actions"><button id="keep-editing" type="button">继续编辑</button><button id="discard-detail" type="button" class="danger">放弃修改并返回</button></div></div><nav class="detail-tabs" role="tablist" aria-label="主机设置"><button id="detail-tab-connection" type="button" role="tab" aria-controls="editor" aria-selected="true">连接设置</button><button id="detail-tab-policy" type="button" role="tab" aria-controls="policy-editor" aria-selected="false">权限设置</button></nav><p id="policy-loading" class="loading-note" hidden>正在读取权限设置…</p>
+  <section id="host-detail-view" class="host-detail" hidden aria-labelledby="detail-title">
+    <div class="detail-toolbar"><button id="detail-back" type="button" class="route-back">返回主机列表</button><span id="detail-dirty" class="draft-note" hidden>有未保存修改</span></div>
+    <header class="detail-header">
+      <span class="host-symbol" aria-hidden="true">&gt;_</span>
+      <div class="detail-identity"><div class="detail-name"><h2 id="detail-title">主机设置</h2><div id="detail-status" class="host-state"></div></div>
+        <div class="detail-meta"><span id="detail-id" hidden></span><span id="detail-address"></span></div>
+      </div>
+    </header>
+    <div id="discard-confirmation" class="identity-notice" hidden role="alert"><p>连接或权限设置尚未保存。离开将放弃这些修改。</p><div class="form-actions"><button id="keep-editing" type="button">继续编辑</button><button id="discard-detail" type="button" class="danger">放弃并离开</button></div></div>
+    <nav class="detail-tabs" role="tablist" aria-label="主机设置"><button id="detail-tab-connection" type="button" role="tab" aria-controls="editor" aria-selected="true">连接设置</button><button id="detail-tab-policy" type="button" role="tab" aria-controls="policy-editor" aria-selected="false">权限设置</button></nav>
+    <p id="policy-loading" class="loading-note" hidden>正在读取权限设置…</p>
     <section id="editor" class="host-pane" role="tabpanel" hidden aria-labelledby="detail-tab-connection">
       <form id="host-form"><section class="settings-group"><h3>基本信息</h3><div class="form-grid">
         <div class="field"><label for="host-id">主机标识</label><input id="host-id" type="text" required maxlength="48" pattern="[a-z][a-z0-9-]{0,47}" autocomplete="off" spellcheck="false" placeholder="prod"><p class="hint">小写字母、数字、短横线</p></div>
@@ -315,12 +397,28 @@ h3 { font-size: 13px; font-weight: 600; }
       <label class="checkbox"><input id="host-enabled" type="checkbox"><span>保存后启用此主机<span class="hint"> · 仍需单独授权给聊天</span></span></label><p id="edit-notice" class="editor-warning" hidden>修改连接信息后，需要重新授权使用该主机的聊天。</p><div class="form-actions"><button id="cancel-edit" type="button">还原连接设置</button><button id="save-host" type="submit" class="primary">保存连接设置</button></div></form>
     </section>
   <section id="policy-editor" class="host-pane" role="tabpanel" hidden aria-labelledby="detail-tab-policy">
-    <p id="policy-revision" class="hint"></p>
     <form id="policy-form">
-      <div class="field"><label for="policy-mode">基础权限</label><select id="policy-mode"><option value="readonly">纯读</option><option value="approval">执行 + 审批</option><option value="god">上帝模式 · ALL IN</option><option id="legacy-mode-option" value="restricted" hidden>已有受限策略</option></select><p id="mode-description" class="hint"></p></div>
-      <p id="shell-warning" class="warning-note" hidden>任意 Shell 每次执行都需要审批。目录规则不能约束 Shell 内部访问。</p>
-      <div id="god-warning" class="delete-box" hidden><strong>此主机会获得完整远程操作权限</strong><p id="god-target"></p><p>获授权的聊天可使用当前 SSH 账号直接执行任意 Shell，读取密钥和凭据、修改或删除文件及服务。主机禁止规则与逐条确认将被跳过；root 账号可操作整台服务器。</p><label id="god-ack-row" class="checkbox"><input id="god-ack" type="checkbox">我已核对目标主机，理解并接受上述权限。</label></div>
-      <details id="advanced-settings" class="policy-section"><summary>目录、命令与运行限制</summary>
+      <div class="permission-heading"><h3 id="mode-title">基础权限</h3><span id="policy-revision"></span></div>
+      <fieldset class="mode-list" aria-labelledby="mode-title">
+        <label class="mode-choice" id="legacy-mode-option" hidden>
+          <input id="mode-restricted" type="radio" name="policy-mode" value="restricted" aria-labelledby="restricted-label" aria-describedby="restricted-hint">
+          <span><span class="mode-title"><strong id="restricted-label">已有受限策略</strong><small id="current-restricted" hidden>已生效</small></span><span id="restricted-hint" class="mode-hint">沿用原有固定操作和命令规则。</span></span>
+        </label>
+        <label class="mode-choice">
+          <input id="mode-readonly" type="radio" name="policy-mode" value="readonly" aria-labelledby="readonly-label" aria-describedby="readonly-hint">
+          <span><span class="mode-title"><strong id="readonly-label">纯读</strong><small id="current-readonly" hidden>已生效</small></span><span id="readonly-hint" class="mode-hint">查询主机状态，读取允许目录中的文件。</span></span>
+        </label>
+        <label class="mode-choice">
+          <input id="mode-approval" type="radio" name="policy-mode" value="approval" aria-labelledby="approval-label" aria-describedby="approval-hint shell-warning">
+          <span><span class="mode-title"><strong id="approval-label">执行 + 审批</strong><small id="current-approval" hidden>已生效</small></span><span id="approval-hint" class="mode-hint">变更操作和自定义 Shell 需要逐次确认。</span><span id="shell-warning" class="mode-hint" hidden>目录规则不能限制 Shell 内的访问。</span></span>
+        </label>
+        <label class="mode-choice">
+          <input id="mode-god" type="radio" name="policy-mode" value="god" aria-labelledby="god-label" aria-describedby="god-hint">
+          <span><span class="mode-title"><strong id="god-label">上帝模式</strong><small id="current-god" hidden>已生效</small></span><span id="god-hint" class="mode-hint">以 SSH 登录账号的完整权限直接执行操作。</span></span>
+        </label>
+      </fieldset>
+      <div id="god-warning" class="mode-elevation" hidden><strong>确认开启完整远程权限</strong><p id="god-target"></p><p>获授权的聊天可跳过目录限制和逐次审批，读取凭据、修改服务或删除文件。以 root 登录时可控制整台服务器。</p><label id="god-ack-row" class="checkbox"><input id="god-ack" type="checkbox"><span>我已核对目标主机并接受上述权限。保存时还需在 Codex 中确认。</span></label></div>
+      <details id="advanced-settings" class="policy-section"><summary><span class="advanced-title">高级设置</span><span class="advanced-hint">目录、命令与运行限制</span></summary>
       <div id="protected-resources" class="protection-note">内置敏感资源保护 · 不可关闭<br><span class="hint">SSH 密钥、凭据、.env、系统安全配置等敏感路径始终禁止访问。补充保护只能增加限制。内容检查不能识别任意位置的所有秘密。</span></div>
       <section class="policy-section"><div class="section-heading"><h2>文件目录范围</h2><button id="add-root" type="button" class="small">＋ 添加目录</button></div><p class="hint">填写远程绝对路径，分别允许读取和写入；写入、替换与删除仍需逐次审批。未配置目录时禁止文件操作。</p><div id="policy-roots" class="rule-list"></div></section>
       <details class="policy-section"><summary>本地制品目录范围</summary><p class="hint">上传需要本地读取与远端写入，下载需要远端读取与本地写入；两端都必须授权。</p><div id="policy-local-roots" class="rule-list"></div><button id="add-local-root" type="button" class="small">＋ 添加本地目录</button></details>
@@ -331,16 +429,22 @@ h3 { font-size: 13px; font-weight: 600; }
       <details class="policy-section"><summary>授权时限与运行限制</summary><div class="form-grid limits-grid"><div class="field"><label for="policy-grant">授权最长有效期（分钟）</label><input id="policy-grant" type="number" min="5" max="1440" required></div><div class="field"><label for="policy-timeout">单次运行超时（秒）</label><input id="policy-timeout" type="number" min="1" max="300" required></div><div class="field"><label for="policy-concurrent">最多并发操作</label><input id="policy-concurrent" type="number" min="1" max="8" required></div><div class="field"><label for="policy-output">最多输出（KiB）</label><input id="policy-output" type="number" min="16" max="128" required></div></div></details>
       <details id="preview-section" class="policy-section"><summary>规则试跑 · 不连接服务器</summary><p class="hint">使用当前表单草稿检查规则，不保存设置、不执行 SSH。</p><div class="field"><label for="preview-kind">操作类型</label><select id="preview-kind"><option value="action">固定操作</option><option value="command">原始命令</option><option value="list">列出目录</option><option value="read">读取文件</option><option value="write">写入文件</option><option value="delete">删除文件</option></select></div><div id="preview-action-fields"><div class="field"><label for="preview-action">固定操作</label><select id="preview-action"></select></div><div id="preview-parameters" class="form-grid"></div></div><div id="preview-command-fields" hidden><div class="field"><label for="preview-command">完整命令</label><textarea id="preview-command" rows="3" spellcheck="false" maxlength="16000"></textarea></div><div class="field"><label for="preview-cwd">工作目录<span class="optional">可选</span></label><input id="preview-cwd" type="text" placeholder="留空使用主机已保存的默认目录" spellcheck="false" aria-describedby="preview-cwd-hint"><p id="preview-cwd-hint" class="hint">留空时使用主机已保存的默认目录；固定操作始终在 / 执行。</p></div></div><div id="preview-path-fields" class="field" hidden><label for="preview-path">远程绝对路径</label><input id="preview-path" type="text" placeholder="/srv/app/config.txt" spellcheck="false"></div><div id="preview-content-fields" class="field" hidden><label for="preview-content">拟写入内容</label><textarea id="preview-content" rows="3" spellcheck="false"></textarea></div><button id="preview-run" type="button" class="small preview-run">检查规则（不执行）</button><div id="preview-result" class="result-box" role="status" hidden></div></details>
       </details>
-      <div class="policy-footer"><p id="policy-save-notice" class="warning-note">保存后将撤销此主机所有聊天的现有授权，并使尚未完成的确认失效；需要重新授权。已开始的远端操作不会撤销。</p><div class="form-actions"><button id="cancel-policy" type="button">还原权限设置</button><button id="save-policy" type="submit" class="primary">保存并撤销旧授权</button></div></div>
+      <div class="policy-footer"><p id="policy-save-notice" hidden>保存将撤销此主机在所有聊天中的现有授权，并使待确认的操作失效。已开始的操作会继续运行。</p><div class="form-actions"><span id="policy-change-state" role="status">已保存</span><button id="cancel-policy" type="button" class="quiet" disabled>还原</button><button id="save-policy" type="submit" class="primary" disabled>保存权限</button></div></div>
     </form>
   </section>
   </section>
   </div>
   <section id="audit-view" role="tabpanel" aria-labelledby="tab-audit" hidden><div class="section-heading"><h2>权限与操作记录</h2><button id="refresh-audit" type="button" class="small">刷新</button></div><p class="hint">记录授权、规则变更、审批和执行结果。日志不保存文件内容或完整原始命令。</p><div class="filter-grid"><div class="field"><label for="audit-host">主机</label><select id="audit-host"><option value="">全部主机</option></select></div><div class="field"><label for="audit-result">结果</label><select id="audit-result"><option value="">全部结果</option><option value="pending">待审批</option><option value="approved">已批准</option><option value="denied">已拒绝</option><option value="ready">已允许执行</option><option value="expired">已到期</option><option value="invalidated">已失效</option><option value="completed">已完成</option><option value="failed">失败</option><option value="timed_out">超时</option><option value="cancelled">已取消</option></select></div></div><div id="audit-list" class="event-list" aria-live="polite"></div><p id="audit-empty" class="empty" hidden>暂无符合条件的记录。</p><button id="audit-more" type="button" class="small" hidden>加载更早记录</button></section>
   <section id="history-view" role="tabpanel" aria-labelledby="tab-history" hidden>
-    <div class="field"><label for="execution-kind">记录类型</label><select id="execution-kind"><option value="history">普通执行记录</option><option value="jobs">可恢复任务</option><option value="transfers">制品传输</option></select></div>
-    <section id="infrastructure-view" hidden><div class="infrastructure-tools"><button id="infrastructure-refresh" type="button" class="small">刷新运行状态</button><button id="infrastructure-back" type="button" class="quiet small" hidden>← 返回运行列表</button></div><p class="hint">任务和传输在聊天中发起。状态未知不代表失败；核对远端状态不会重放命令。取消和恢复会弹出原生确认。</p><div id="infrastructure-list" class="event-list infrastructure-list" aria-live="polite"></div><button id="infrastructure-more" type="button" class="small" hidden>加载更多运行记录</button><div id="infrastructure-detail" class="result-box" aria-live="polite" hidden></div><div class="infrastructure-tools"><button id="infrastructure-output-more" type="button" class="small" hidden>读取后续输出</button><button id="infrastructure-storage" type="button" class="small" hidden>测量远端私有状态</button><button id="infrastructure-reconcile" type="button" class="small" hidden>核对远端任务状态</button><button id="infrastructure-resume" type="button" class="small" hidden>恢复传输</button><button id="infrastructure-cancel" type="button" class="small danger" hidden>取消运行</button></div><p id="infrastructure-storage-result" class="hint" role="status" hidden></p><p id="infrastructure-grant-note" class="warning-note" hidden>当前授权已失效或主机停用，请重新授权后控制此运行。</p></section>
-    <section id="history-hosts-view"><div class="section-heading"><h2>按主机查看执行历史</h2></div><div id="history-hosts" class="history-host-grid"></div><button id="history-all" type="button" class="quiet small">全部历史（含已移除的主机）</button>
+    <div id="history-kind-bar"><h2>执行历史</h2><label for="execution-kind" class="sr-only">记录类型</label><select id="execution-kind"><option value="history">普通执行记录</option><option value="jobs">可恢复任务</option><option value="transfers">制品传输</option></select></div>
+    <section id="infrastructure-view" hidden><div class="infrastructure-tools"><button id="infrastructure-back" type="button" class="route-back" hidden>运行列表</button><button id="infrastructure-refresh" type="button" class="small">刷新运行状态</button></div><p class="hint">任务和传输在聊天中发起。状态未知不代表失败；核对远端状态不会重放命令。取消和恢复会弹出原生确认。</p><div id="infrastructure-list" class="event-list infrastructure-list" aria-live="polite"></div><button id="infrastructure-more" type="button" class="small" hidden>加载更多运行记录</button><div id="infrastructure-detail" class="result-box" aria-live="polite" hidden></div><div class="infrastructure-tools"><button id="infrastructure-output-more" type="button" class="small" hidden>读取后续输出</button><button id="infrastructure-storage" type="button" class="small" hidden>测量远端私有状态</button><button id="infrastructure-reconcile" type="button" class="small" hidden>核对远端任务状态</button><button id="infrastructure-resume" type="button" class="small" hidden>恢复传输</button><button id="infrastructure-cancel" type="button" class="small danger" hidden>取消运行</button></div><p id="infrastructure-storage-result" class="hint" role="status" hidden></p><p id="infrastructure-grant-note" class="warning-note" hidden>当前授权已失效或主机停用，请重新授权后控制此运行。</p></section>
+    <section id="history-hosts-view">
+      <h3 class="history-caption">选择主机</h3>
+      <div class="history-destinations">
+        <div id="history-hosts" class="history-host-grid"></div>
+        <p id="history-no-hosts" class="hint" hidden>还没有配置主机。已有的执行记录仍可从下方查看。</p>
+        <button id="history-all" type="button" class="history-destination"><span class="history-icon" aria-hidden="true">≡</span><strong>全部记录</strong><span class="hint">包括已移除主机的历史记录</span></button>
+      </div>
       <details id="lifecycle-panel" class="policy-section"><summary>存储、保留与归档</summary>
         <p class="hint">仅确认终态且无恢复活动的记录可自动归档。状态未知、提交结果未知和超时记录会保留。</p>
         <div id="storage-summary" role="status"></div>
@@ -350,8 +454,22 @@ h3 { font-size: 13px; font-weight: 600; }
         <div class="field"><label for="archive-host">归档主机</label><select id="archive-host"><option value="">全部主机</option></select></div>
         <div id="archive-list" class="event-list"></div><button id="archive-more" type="button" hidden>加载更多归档</button>
       </details></section>
-    <div id="history-list-view" hidden><button id="history-host-back" type="button" class="quiet small">← 全部主机</button><div class="section-heading"><h2 id="history-host-title">执行历史</h2><button id="refresh-history" type="button" class="small">刷新</button></div><p class="hint">查看执行目的、原始命令和最终输出。敏感输出会隐藏；这里只查看记录，不会重新执行。</p><div class="filter-grid"><div class="field"><label for="history-from">开始日期</label><input id="history-from" type="date"></div><div class="field"><label for="history-to">结束日期（含当天）</label><input id="history-to" type="date"></div><div class="field"><label for="history-session">会话 ID</label><input id="history-session" type="text" autocomplete="off" placeholder="全部会话"></div><div class="field"><label for="history-status">执行状态</label><select id="history-status"><option value="">全部状态</option><option value="running">执行中</option><option value="completed">成功</option><option value="failed">失败</option><option value="not_approved">未通过审批</option><option value="timed_out">超时</option><option value="cancelled">已取消</option><option value="unknown">状态未知</option></select></div></div><div id="history-list" class="event-list" aria-live="polite"></div><p id="history-empty" class="empty" hidden>暂无执行记录。</p><button id="history-more" type="button" class="small" hidden>加载更早记录</button></div>
-    <div id="history-detail-view" hidden><div class="detail-toolbar"><button id="history-back" type="button" class="quiet small">← 返回执行历史</button><button id="refresh-history-detail" type="button" class="small">刷新详情</button></div><div id="history-detail-content" aria-live="polite"></div></div>
+    <div id="history-list-view" hidden>
+      <button id="history-host-back" type="button" class="route-back">历史主机列表</button>
+      <div class="history-list-heading"><h2 id="history-host-title">执行历史</h2><button id="refresh-history" type="button" class="small">刷新</button></div>
+      <details id="history-filters" class="history-filters">
+        <summary><span>筛选条件</span><span id="history-filter-summary">不限</span></summary>
+        <div class="filter-grid">
+          <div class="field"><label for="history-from">开始日期</label><input id="history-from" type="date"></div>
+          <div class="field"><label for="history-to">结束日期（含当天）</label><input id="history-to" type="date"></div>
+          <div class="field"><label for="history-session">会话 ID</label><input id="history-session" type="text" autocomplete="off" placeholder="全部会话"></div>
+          <div class="field"><label for="history-status">执行状态</label><select id="history-status"><option value="">全部状态</option><option value="running">执行中</option><option value="completed">成功</option><option value="failed">失败</option><option value="not_approved">未通过审批</option><option value="timed_out">超时</option><option value="cancelled">已取消</option><option value="unknown">状态未知</option></select></div>
+        </div>
+        <button id="history-filter-reset" type="button" class="quiet small">清除筛选</button>
+      </details>
+      <div id="history-list" class="event-list" aria-live="polite"></div><p id="history-empty" class="empty" hidden>暂无执行记录。</p><button id="history-more" type="button" class="small" hidden>加载更早记录</button>
+    </div>
+    <div id="history-detail-view" hidden><div class="detail-toolbar"><button id="history-back" type="button" class="route-back">执行记录列表</button><button id="refresh-history-detail" type="button" class="small">刷新详情</button></div><div id="history-detail-content" aria-live="polite"></div></div>
   </section>
   <footer id="sync-note" class="sync-note" aria-live="polite"></footer>
 </main>
@@ -377,6 +495,10 @@ h3 { font-size: 13px; font-weight: 600; }
   function notify(method) { send({ jsonrpc: '2.0', method }); }
   function showError(error) { $('error-message').textContent = error?.message || String(error); $('error-banner').hidden = false; }
   function clearError() { $('error-banner').hidden = true; $('error-message').textContent = ''; }
+  function focusRoute(control) {
+    control.focus({ preventScroll: true });
+    (document.scrollingElement || document.documentElement).scrollTop = 0;
+  }
   function canEdit() { return connected && Boolean(state.threadId) && !busy; }
   function connectionSignature(id, source = state) {
     const host = source.hosts.find(item => item.id === id);
@@ -386,11 +508,7 @@ h3 { font-size: 13px; font-weight: 600; }
     if (!next || !Array.isArray(next.hosts) || !Array.isArray(next.grantedHostIds)) throw new Error('未收到完整主机状态，请刷新重试。');
     const updated = { threadId: typeof next.threadId === 'string' && next.threadId ? next.threadId : null, hosts: next.hosts, grantedHostIds: next.grantedHostIds, grants: Array.isArray(next.grants) ? next.grants : [], policies: Array.isArray(next.policies) ? next.policies : [], shortcutHelp: next.shortcutHelp || '' };
     for (const [id, result] of connectionTests) if (result.signature !== connectionSignature(id, updated)) connectionTests.delete(id);
-    if (state.threadId !== updated.threadId) {
-      collectionSequence++; historySequence++; collectionLoading=historyLoading=false;
-      historyHost=null; selectedHistoryId=historyEntry=historyCursor=null; historyItems=[];
-      archiveSequence++; archiveItems=[]; archiveCursor=null;
-      infrastructureSequence++; infrastructureLoading=false; infrastructureItems=[]; infrastructureSelected=null; infrastructureEntry=null; infrastructureCursor=null; infrastructureOutput=''; }
+    if (state.threadId !== updated.threadId) resetExecutionRoute();
     state = updated;
     render();
   }
@@ -406,12 +524,13 @@ h3 { font-size: 13px; font-weight: 600; }
     if (!silent) clearError();
     try {
       const next = await tool('ssh_status', {});
-      if (at === epoch) { applyState(next.state); $('sync-note').textContent = '已同步 · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+      if (at !== epoch) return;
+      applyState(next.state); $('sync-note').textContent = '已同步 · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       $('connection-status').textContent = '面板已连接'; $('status-dot').classList.add('ready');
       if (at === epoch && activeTab === 'history' && executionKind !== 'history') { if (!silent) await (infrastructureSelected ? readInfrastructure() : loadInfrastructure()); }
       else if (at === epoch && activeTab === 'history' && selectedHistoryId !== null) { if (!silent || historyEntry?.status === 'running') await loadHistoryDetail(selectedHistoryId, silent); }
       else if (at === epoch && !silent && ['audit', 'history'].includes(activeTab)) await loadCollection(activeTab);
-    } catch (error) { showError(error); $('connection-status').textContent = '更新失败'; }
+    } catch (error) { if (at === epoch) { showError(error); $('connection-status').textContent = '更新失败'; } }
     finally { refreshing = false; controls(); }
   }
   async function mutate(name, args, onSaved, timeoutMs) {
@@ -560,7 +679,7 @@ h3 { font-size: 13px; font-weight: 600; }
     $('host-hostname').required = !alias; $('host-username').required = !alias; $('host-alias').required = alias;
     $('host-hostname').disabled = alias; $('host-username').disabled = alias; $('host-port').disabled = alias; $('host-alias').disabled = !alias;
   }
-  let detailOpen = false, detailTab = 'connection', connectionBaseline = '', policyBaseline = '';
+  let detailOpen = false, detailTab = 'connection', connectionBaseline = '', policyBaseline = '', pendingTab = null;
   function connectionDraft() {
     const mode = $('connection-mode').value, alias = mode === 'native' || (mode === 'legacy' && $('host-mode').value === 'alias');
     const host = { id: editingId || $('host-id').value.trim(), name: $('host-name').value.trim(), hostname: alias ? '' : $('host-hostname').value.trim(), username: alias ? '' : $('host-username').value.trim(), port: alias ? 22 : Number($('host-port').value || 22), sshAlias: alias ? $('host-alias').value.trim() : '', identityFile: $('host-key').value.trim(), defaultCwd: $('host-cwd').value.trim(), enabled: $('host-enabled').checked };
@@ -577,28 +696,45 @@ h3 { font-size: 13px; font-weight: 600; }
     fillInfrastructureConnection(host);
     connectionMode(); connectionBaseline = JSON.stringify(connectionDraft());
   }
-  function detailDirty() { return detailOpen && (connectionBaseline !== JSON.stringify(connectionDraft()) || keyEditors.some(row => row.input.value.trim() !== row.confirmed.join('\n')) || (policyRecord && policyBaseline !== JSON.stringify(draftPolicy()))); }
+  function policyDirty() { return Boolean(policyRecord && policyBaseline !== JSON.stringify(draftPolicy())); }
+  function currentPolicy() { return state.policies.find(item => item.hostId === policyRecord.hostId) || policyRecord; }
+  function detailDirty() { return detailOpen && (connectionBaseline !== JSON.stringify(connectionDraft()) || keyEditors.some(row => row.input.value.trim() !== row.confirmed.join('\n')) || policyDirty()); }
+  function updateDraftState() {
+    $('detail-dirty').hidden = !detailDirty();
+    if (!policyRecord) return;
+    const changed = policyDirty();
+    const stale = currentPolicy().revision !== policyRecord.revision;
+    const exists = state.hosts.some(host => host.id === policyRecord.hostId);
+    $('policy-save-notice').hidden = !changed;
+    $('policy-change-state').textContent = changed ? '有未保存的更改' : '已保存';
+    $('save-policy').disabled = !canEdit() || !exists || !changed || stale;
+    $('cancel-policy').disabled = !canEdit() || !exists || (!changed && !stale);
+  }
   function openEditor(host = null) { return openHostDetail(host, 'connection'); }
   function openPolicy(host) { return openHostDetail(host, 'policy'); }
   function openHostDetail(host, tab) {
     if (!canEdit()) return;
-    detailOpen = true; detailTab = tab; policyRecord = null; policyBaseline = ''; fillConnection(host);
+    epoch++; detailOpen = true; detailTab = tab; pendingTab = null; policyRecord = null; policyBaseline = ''; fillConnection(host);
     $('delete-confirmation').hidden = true; deletingId = null; $('discard-confirmation').hidden = true; clearError(); renderHostDetail();
-    $('host-detail-view').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    focusRoute($(tab === 'policy' ? 'detail-back' : host ? 'host-name' : 'host-id'));
     if (tab === 'policy') return loadPolicy();
-    $(host ? 'host-name' : 'host-id').focus();
   }
   function selectDetailTab(tab) {
     if (!canEdit() || !detailOpen || (tab === 'policy' && !editingId)) return;
-    detailTab = tab; $('discard-confirmation').hidden = true; renderHostDetail();
+    detailTab = tab; pendingTab = null; $('discard-confirmation').hidden = true; renderHostDetail();
     if (tab === 'policy' && !policyRecord) return loadPolicy();
   }
-  function leaveDetail(force = false) {
+  function leaveDetail(destination = null, discard = false) {
     if (busy) return;
-    if (!force && detailDirty()) { $('discard-confirmation').hidden = false; $('keep-editing').focus(); return; }
-    detailOpen = false; editingId = null; policyRecord = null; connectionBaseline = ''; policyBaseline = ''; $('discard-confirmation').hidden = true; renderHostDetail(); $('add-host').focus();
+    if (!discard && detailDirty()) {
+      pendingTab = destination; $('discard-confirmation').hidden = false; $('keep-editing').focus(); return;
+    }
+    pendingTab = null; detailOpen = false; editingId = null; policyRecord = null;
+    connectionBaseline = ''; policyBaseline = ''; $('discard-confirmation').hidden = true;
+    if (destination) return enterTab(destination);
+    epoch++; clearError(); renderHostDetail(); focusRoute($('add-host'));
   }
-  function closeEditor() { leaveDetail(true); }
+  function closeEditor() { leaveDetail(null, true); }
   function renderHostDetail() {
     $('host-list-view').hidden = detailOpen; $('host-detail-view').hidden = !detailOpen;
     $('editor').hidden = !detailOpen || detailTab !== 'connection'; $('policy-editor').hidden = !detailOpen || detailTab !== 'policy' || !policyRecord;
@@ -611,9 +747,17 @@ h3 { font-size: 13px; font-weight: 600; }
     if (!detailOpen) return;
     const host = state.hosts.find(item => item.id === editingId);
     $('detail-title').textContent = host ? (host.name || host.id) : editingId ? '主机已删除' : '添加主机';
-    $('detail-address').textContent = host ? host.id + ' · ' + (host.sshAlias || host.username + '@' + host.hostname + ':' + (host.port || 22)) : editingId ? '当前草稿无法保存，请返回主机列表。' : '先保存连接信息，再配置目录与操作权限。';
-    $('detail-status').replaceChildren(...(host ? [policySummary(host)] : []));
-    $('detail-dirty').hidden = !detailDirty();
+    $('detail-id').hidden = !host; $('detail-id').textContent = host?.id || '';
+    $('detail-address').textContent = host ? (host.sshAlias ? 'SSH · ' + host.sshAlias : host.username + '@' + host.hostname + ':' + (host.port || 22)) : editingId ? '当前草稿无法保存，请返回主机列表。' : '先保存连接信息，再配置权限。';
+    const status = $('detail-status');
+    status.replaceChildren(); status.hidden = !host;
+    if (host) {
+      const access = hostAccessState(host); status.dataset.status = access.status;
+      status.append(text('span', access.label, 'host-state-label'));
+      if (access.expiresAt) status.append(text('span', '有效至 ' + timeLabel(access.expiresAt), 'host-expiry'));
+    }
+    if (policyRecord) updatePolicyMode();
+    updateDraftState();
     const enabled = canEdit() && (!editingId || Boolean(host));
     $('save-host').disabled = !enabled; $('cancel-edit').disabled = !canEdit();
     for (const id of ['host-id', 'host-name', 'host-mode', 'host-hostname', 'host-username', 'host-port', 'host-alias', 'host-key', 'host-cwd', 'host-enabled']) $(id).disabled = !enabled;
@@ -621,8 +765,10 @@ h3 { font-size: 13px; font-weight: 600; }
     if (enabled) { connectionMode(); $('host-id').disabled = Boolean(editingId); }
   }
   $('detail-tab-connection').onclick = () => selectDetailTab('connection'); $('detail-tab-policy').onclick = () => selectDetailTab('policy');
-  $('detail-back').onclick = () => leaveDetail(); $('keep-editing').onclick = () => { $('discard-confirmation').hidden = true; }; $('discard-detail').onclick = () => leaveDetail(true);
-  $('host-form').oninput = $('policy-form').oninput = () => { $('detail-dirty').hidden = !detailDirty(); };
+  $('detail-back').onclick = () => leaveDetail();
+  $('keep-editing').onclick = () => { pendingTab = null; $('discard-confirmation').hidden = true; $('detail-tab-' + detailTab).focus(); };
+  $('discard-detail').onclick = () => leaveDetail(pendingTab, true);
+  $('host-form').oninput = $('policy-form').oninput = updateDraftState;
 
   function confirmRemove(host) {
     if (!canEdit()) return;
@@ -696,7 +842,7 @@ h3 { font-size: 13px; font-weight: 600; }
     const input = document.createElement('input'); input.type = 'checkbox'; input.checked = Boolean(checked); input.dataset.field = field;
     const el = text('label', '', 'checkbox'); el.append(input, text('span', label)); return { el, input };
   }
-  function removeButton(label, handler) { const button = text('button', '移除', 'quiet small remove-row'); button.type = 'button'; button.setAttribute('aria-label', label); button.onclick = () => { if (canEdit()) handler(); }; return button; }
+  function removeButton(label, handler) { const button = text('button', '移除', 'quiet small remove-row'); button.type = 'button'; button.setAttribute('aria-label', label); button.onclick = () => { if (canEdit()) { handler(); updateDraftState(); } }; return button; }
   function newRuleId(prefix) { return prefix + '-' + Date.now().toString(36) + '-' + (++rowSequence); }
   function addRoot(value = {}) {
     const row = { id: value.id || newRuleId('dir'), el: text('div', '', 'rule-row'), path: inputControl(value.path, '远程目录', 'path', '/srv/app') };
@@ -722,7 +868,7 @@ h3 { font-size: 13px; font-weight: 600; }
   function fillPolicy(record, catalog) {
     policyRecord = record; actionCatalog = catalog; rootRows = []; blockedRows = []; commandRows = []; actionRows = [];
     const value = record.policy; fillInfrastructurePolicy(value);
-    $('policy-revision').textContent = '规则版本 ' + record.revision + ' · 保存后需重新授权';
+    $('policy-revision').textContent = '规则版本 ' + record.revision;
     for (const id of ['policy-roots', 'policy-blocked', 'policy-rules', 'policy-actions']) $(id).replaceChildren();
     for (const root of value.roots) addRoot(root);
     for (const path of value.blockedPaths) addBlocked(path);
@@ -738,16 +884,17 @@ h3 { font-size: 13px; font-weight: 600; }
       if (item.parameters?.length) { const checkbox = checkControl('限制服务或容器名称', Boolean(value.actionArguments?.[item.id]), 'restrictNames'); restrict = checkbox.input; names = inputControl((value.actionArguments?.[item.id]?.names || []).join(', '), item.label + '名称白名单', 'names'); names.required = false; names.placeholder = '用逗号分隔；启用且留空表示不允许任何名称'; const box = text('div', '', 'argument-rule'); box.append(checkbox.el, fieldBox('允许的名称', names)); row.append(box); }
       $('policy-actions').append(row); actionRows.push({ item, control, names, restrict });
     }
-    $('god-ack').checked = false; $('legacy-mode-option').hidden = value.mode !== 'restricted';
-    $('policy-mode').value = value.mode; $('policy-grant').value = String(value.grantMinutes); $('policy-timeout').value = String(value.timeoutSeconds);
+    $('god-ack').checked = false;
+    for (const mode of Object.keys(modeLabels)) $('mode-' + mode).checked = mode === value.mode;
+    $('policy-grant').value = String(value.grantMinutes); $('policy-timeout').value = String(value.timeoutSeconds);
     $('policy-concurrent').value = String(value.maxConcurrent); $('policy-output').value = String(value.maxOutputKiB);
     $('preview-kind').value = 'action'; $('preview-action').replaceChildren(...catalog.map(item => option(item.id, item.label))); $('preview-action').value = catalog[0]?.id || '';
     $('preview-command').value = ''; $('preview-cwd').value = ''; $('preview-path').value = ''; $('preview-content').value = ''; $('preview-result').hidden = true;
-    updatePolicyMode(); updatePreview(); policyBaseline = JSON.stringify(draftPolicy()); renderHostDetail();
+    updatePreview(); policyBaseline = JSON.stringify(draftPolicy()); renderHostDetail();
   }
   function draftPolicy() {
     if (!policyRecord) throw new Error('请先打开主机权限设置。');
-    return { ...draftInfrastructurePolicy(), mode: $('policy-mode').value,
+    return { ...draftInfrastructurePolicy(), mode: selectedPolicyMode(),
       roots: rootRows.map(row => ({ id: row.id, path: row.path.value.trim(), read: row.read.checked, write: row.write.checked, match: row.match.value })),
       blockedPaths: blockedRows.map(row => row.path.value.trim()),
       commandRules: commandRows.map(row => ({ id: row.id, match: row.match.value, pattern: row.pattern.value, decision: row.decision.value })),
@@ -764,20 +911,26 @@ h3 { font-size: 13px; font-weight: 600; }
     } catch (error) { showError(error); } finally { busy = false; render(); }
   }
   const modeLabels={readonly:'纯读',approval:'执行 + 审批',god:'上帝模式',restricted:'已有受限策略'};
+  let godTargetSignature = '';
+  function selectedPolicyMode() { return Object.keys(modeLabels).find(mode => $('mode-' + mode).checked); }
   function updatePolicyMode() {
-    const mode=$('policy-mode').value, host=state.hosts.find(item=>item.id===policyRecord?.hostId);
+    const mode = selectedPolicyMode(), saved = currentPolicy(), host = state.hosts.find(item => item.id === policyRecord.hostId);
+    $('legacy-mode-option').hidden = saved.policy.mode !== 'restricted' && policyRecord.policy.mode !== 'restricted';
     $('shell-warning').hidden = mode !== 'approval';
-    $('mode-description').textContent = ({
-      readonly:'允许固定只读查询和已授权目录的读取。写入、启动、停止和原始 Shell 均禁止。',
-      approval:'固定只读查询按规则执行；变更和原始 Shell 需要逐次批准。',
-      god:'远程 Shell 使用 SSH 账号的全部权限，操作可直接执行。',
-      restricted:'保留升级前的固定操作和审批规则。选择新模式后保存即可切换。'
-    })[mode] || '';
-    $('god-warning').hidden = mode !== 'god';
+    for (const choice of Object.keys(modeLabels)) {
+      const effective = choice === saved.policy.mode;
+      $('current-' + choice).hidden = !effective;
+      const description = [choice + '-hint'];
+      if (effective) description.push('current-' + choice);
+      if (choice === 'approval' && mode === 'approval') description.push('shell-warning');
+      $('mode-' + choice).setAttribute('aria-describedby', description.join(' '));
+    }
+    $('god-warning').hidden = mode !== 'god' || saved.policy.mode === 'god';
     $('protected-resources').hidden = mode === 'god';
-    $('god-ack-row').hidden = policyRecord?.policy.mode === 'god';
-    $('god-target').textContent = host ? '目标主机：'+(host.name || host.id)+' ('+host.id+') · '+(host.sshAlias || host.username+'@'+host.hostname+':'+host.port) : '';
-    if(mode!=='god') $('god-ack').checked=false;
+    $('god-target').textContent = host ? '目标主机：' + (host.name || host.id) + ' (' + host.id + ') · ' + (host.sshAlias || host.username + '@' + host.hostname + ':' + (host.port || 22)) : '';
+    const signature = host ? JSON.stringify([state.threadId, saved.revision, host.id, host.name, ...connectionFields.map(field => host[field])]) : '';
+    if (!host || $('god-warning').hidden || signature !== godTargetSignature) $('god-ack').checked = false;
+    godTargetSignature = signature;
   }
   function updatePreview() {
     const kind = $('preview-kind').value;
@@ -811,7 +964,7 @@ h3 { font-size: 13px; font-weight: 600; }
     } catch (error) { $('preview-result').textContent = '检查未完成：' + error.message; showError(error); } finally { busy = false; render(); }
   }
   $('policy-form').onsubmit = async event => {
-    event.preventDefault(); if (!canEdit() || !policyRecord || !$('policy-form').reportValidity()) return;
+    event.preventDefault(); if (!canEdit() || !policyDirty() || currentPolicy().revision !== policyRecord.revision || !$('policy-form').reportValidity()) return;
     const args = { hostId: policyRecord.hostId, policy: draftPolicy(), expectedRevision: policyRecord.revision };
     const elevate=args.policy.mode==='god' && policyRecord.policy.mode!=='god';
     if (elevate) {
@@ -849,6 +1002,7 @@ h3 { font-size: 13px; font-weight: 600; }
     return args;
   }
   async function loadCollection(kind, append = false) {
+    if (activeTab !== kind) return;
     if (kind === 'history' && (!historyHost || executionKind !== 'history')) return;
     const cursor = kind === 'history' ? historyCursor : auditCursor;
     if (!connected || !state.threadId || busy || (append && cursor === null)) return;
@@ -867,10 +1021,16 @@ h3 { font-size: 13px; font-weight: 600; }
     finally { if (sequence === collectionSequence) { collectionLoading = false; renderGovernance(); } }
   }
   function selectTab(tab) {
-    infrastructureSequence++; infrastructureLoading=false; collectionSequence++; collectionLoading = false; historySequence++; historyLoading = false; activeTab = tab; renderGovernance();
-    if (tab === 'history' && executionKind !== 'history') return loadInfrastructure();
-    if (tab === 'history' && selectedHistoryId !== null) return loadHistoryDetail(selectedHistoryId);
-    if (tab !== 'hosts') return loadCollection(tab);
+    if (busy) return;
+    if (detailOpen) return leaveDetail(tab);
+    return enterTab(tab);
+  }
+  function enterTab(tab) {
+    epoch++; resetExecutionRoute(); activeTab = tab;
+    deletingId = null; $('delete-confirmation').hidden = true;
+    auditItems = []; auditCursor = null; $('audit-host').value = ''; $('audit-result').value = '';
+    clearError(); renderGovernance(); focusRoute($('tab-' + tab));
+    if (tab === 'audit') return loadCollection(tab);
   }
   function renderAudit() {
     $('audit-list').replaceChildren(...auditItems.map(item => {
@@ -885,9 +1045,9 @@ h3 { font-size: 13px; font-weight: 600; }
   }
   let historyHost = null, historyHostsSignature = '', historyItems = [], historyCursor = null, selectedHistoryId = null, historyEntry = null, historyLoading = false, historySequence = 0, historyLoadError = '', renderedHistoryEntry = null;
   async function openHistory(id) {
-    if (!canEdit() || !Number.isInteger(id)) return;
-    collectionSequence++; collectionLoading = false; selectedHistoryId = id; historyEntry = null; historyLoadError = ''; renderHistory();
-    $('history-detail-view').scrollIntoView({ block: 'start', behavior: 'smooth' }); return loadHistoryDetail(id);
+    if (!canEdit() || activeTab !== 'history' || executionKind !== 'history' || !historyHost || !Number.isInteger(id)) return;
+    epoch++; collectionSequence++; collectionLoading = false; selectedHistoryId = id; historyEntry = null; historyLoadError = ''; renderHistory();
+    focusRoute($('history-back')); return loadHistoryDetail(id);
   }
   async function loadHistoryDetail(id, silent = false) {
     if (!canEdit() || activeTab !== 'history' || selectedHistoryId !== id || (silent && historyLoading)) return;
@@ -901,8 +1061,50 @@ h3 { font-size: 13px; font-weight: 600; }
     } catch (error) { if (sequence === historySequence && activeTab === 'history' && selectedHistoryId === id) { historyLoadError = error.message; showError(error); } }
     finally { if (sequence === historySequence) { historyLoading = false; renderHistory(); } }
   }
-  function historyBack() { historySequence++; historyLoading = false; selectedHistoryId = null; historyEntry = null; historyLoadError = ''; renderHistory(); }
-  function outputBlock(label, content, note = '') { const section = text('section', '', 'history-block'); section.append(text('h3', label)); if (note) section.append(text('p', note, 'hint')); section.append(text('pre', content)); return section; }
+  function historyBack() {
+    if (busy) return;
+    epoch++; historySequence++; historyLoading = false; selectedHistoryId = null; historyEntry = null; historyLoadError = '';
+    clearError(); renderHistory(); focusRoute($('history-host-back'));
+  }
+  async function copyHistoryText(value) {
+    if (window.navigator.clipboard?.writeText) {
+      try { await window.navigator.clipboard.writeText(value); return true; } catch { /* Try the WebView's user-initiated copy event. */ }
+    }
+    if (!document.execCommand) return false;
+    let written = false;
+    const onCopy = event => {
+      if (!event.clipboardData) return;
+      event.clipboardData.setData('text/plain', value);
+      event.preventDefault();
+      written = true;
+    };
+    document.addEventListener('copy', onCopy);
+    try { return document.execCommand('copy') && written; }
+    catch { return false; }
+    finally { document.removeEventListener('copy', onCopy); }
+  }
+  function outputBlock(label, value, note = '', placeholder = '') {
+    const section = text('section', '', 'history-block'), header = text('div', '', 'history-block-head');
+    header.append(text('h3', label)); section.append(header);
+    if (typeof value === 'string' && value.length) {
+      const button = text('button', '复制', 'quiet small history-copy');
+      button.type = 'button'; button.setAttribute('aria-label', '复制' + label);
+      const feedback = text('span', '', 'sr-only'); feedback.setAttribute('role', 'status');
+      let timer;
+      button.onclick = async () => {
+        clearTimeout(timer);
+        const copied = await copyHistoryText(value);
+        button.textContent = copied ? '已复制' : '复制';
+        feedback.className = copied ? 'sr-only' : 'hint';
+        feedback.textContent = copied ? label + '已复制' : '未能写入剪贴板，请选中下方原文手动复制。';
+        if (copied) timer = setTimeout(() => { button.textContent = '复制'; }, 1800);
+      };
+      header.append(button); section.append(feedback);
+    }
+    if (note) section.append(text('p', note, 'hint'));
+    section.append(text('pre', value || placeholder));
+    return section;
+  }
   function renderHistoryDetail() {
     const target = $('history-detail-content');
     if (!historyEntry) { renderedHistoryEntry = null; target.replaceChildren(text('p', historyLoadError ? '读取未完成：' + historyLoadError : '正在读取执行详情…', 'loading-note')); return; }
@@ -912,7 +1114,15 @@ h3 { font-size: 13px; font-weight: 600; }
     const purpose = text('section', '', 'history-purpose'); purpose.append(text('h3', '执行目的'), text('p', entry.explanation || '未提供执行目的。')); nodes.push(purpose);
     const unapproved=entry.status==='not_approved';
     const host = entry.hostSnapshot || {}, address = host.sshAlias || (host.hostname ? (host.username ? host.username + '@' : '') + host.hostname + ':' + (host.port || 22) : '');
-    nodes.push(text('div', '主机：' + (host.name || entry.hostId) + (address ? ' · ' + address : '') + '\n聊天：' + (entry.threadId || '—') + '\n会话：' + (entry.sessionId || '未记录') + (unapproved?'\n申请：':'\n开始：') + new Date(entry.startedAt).toLocaleString() + (unapproved?'\n决定：':'\n结束：') + (entry.finishedAt ? new Date(entry.finishedAt).toLocaleString() : '尚无完成时间') + '\n退出码：' + (entry.exitCode ?? '—') + '\n工作目录：' + (entry.cwd || '—') + '\n规则版本：' + (entry.policyRevision ?? '—'), 'history-metadata'));
+    const metadata = text('dl', '', 'history-metadata');
+    for (const [label, value] of [
+      ['主机', (host.name || entry.hostId) + (address ? ' · ' + address : '')],
+      ['聊天', entry.threadId || '—'], ['会话', entry.sessionId || '未记录'],
+      [unapproved ? '申请' : '开始', new Date(entry.startedAt).toLocaleString()],
+      [unapproved ? '决定' : '结束', entry.finishedAt ? new Date(entry.finishedAt).toLocaleString() : '尚无完成时间'],
+      ['退出码', entry.exitCode ?? '—'], ['工作目录', entry.cwd || '—'], ['规则版本', entry.policyRevision ?? '—']
+    ]) metadata.append(text('dt', label), text('dd', value));
+    nodes.push(metadata);
     if (entry.status === 'running') nodes.push(text('p', '执行中，最终输出将在完成后显示。此页可见时自动刷新。', 'result-box'));
     else if (entry.status !== 'not_approved' && (entry.status === 'unknown' || entry.completionKnown === false)) nodes.push(text('p', '完成状态未知，无法确认远端操作是否已经结束。', 'warning-note'));
     if (entry.requestedCommand) nodes.push(outputBlock('原始请求命令', entry.requestedCommand));
@@ -929,36 +1139,69 @@ h3 { font-size: 13px; font-weight: 600; }
     if (entry.outputNotice) nodes.push(text('p', entry.outputNotice, 'result-box'));
     if (entry.status === 'not_approved') { target.replaceChildren(...nodes); renderedHistoryEntry = entry; return; }
     if (entry.redacted) nodes.push(text('p', '敏感输出已隐藏，不展示标准输出和诊断输出。', 'protection-note'));
-    else if (entry.status === 'running') nodes.push(outputBlock('运行输出', '等待执行完成后记录最终输出。'));
+    else if (entry.status === 'running') nodes.push(outputBlock('运行输出', null, '', '等待执行完成后记录最终输出。'));
     else {
       const completed = entry.status === 'completed' && entry.exitCode === 0 && entry.completionKnown !== false;
       const diagnosticNote = entry.stderr ? (completed ? '命令已成功完成（退出码 0）。' : '') + '此通道可能包含 SSH 登录提示、程序警告或错误；请结合执行状态和退出码判断。' : '';
-      nodes.push(outputBlock('标准输出', entry.stdout == null ? '（未保存标准输出）' : entry.stdout || '（标准输出为空）'), outputBlock('诊断输出（stderr）', entry.stderr == null ? '（未保存诊断输出）' : entry.stderr || '（诊断输出为空）', diagnosticNote));
+      nodes.push(outputBlock('标准输出', entry.stdout, '', entry.stdout == null ? '（未保存标准输出）' : '（标准输出为空）'), outputBlock('诊断输出（stderr）', entry.stderr, diagnosticNote, entry.stderr == null ? '（未保存诊断输出）' : '（诊断输出为空）'));
     }
     target.replaceChildren(...nodes); renderedHistoryEntry = entry;
   }
-  function selectHistoryHost(id) {
+  function resetExecutionRoute(kind = 'history', id = null) {
     collectionSequence++; historySequence++; collectionLoading = historyLoading = false;
-    historyHost = id; selectedHistoryId = historyEntry = null; historyCursor = null; historyItems = [];
-    for (const key of ['history-from','history-to','history-session','history-status']) $(key).value = '';
-    clearError(); renderHistory();
-    if (historyHost) return loadCollection('history');
+    historyHost = id; selectedHistoryId = historyEntry = renderedHistoryEntry = null;
+    historyCursor = null; historyItems = []; historyLoadError = '';
+    clearHistoryFilters();
+    $('history-filters').open = false;
+    infrastructureSequence++; infrastructureLoading = false; executionKind = kind;
+    infrastructureItems = []; infrastructureCursor = infrastructureSelected = infrastructureEntry = null; infrastructureOutput = '';
+    archiveSequence++; archiveItems = []; archiveCursor = null; $('lifecycle-panel').open = false;
+    if (archiveActivity === 'overview') archiveActivity = null;
+    archiveButtons = []; $('archive-host').value = ''; $('storage-summary').replaceChildren();
+    $('archive-list').replaceChildren(); $('archive-more').hidden = true;
+  }
+  function selectHistoryHost(id) {
+    if (busy || activeTab !== 'history') return;
+    epoch++; resetExecutionRoute('history', id); clearError(); renderGovernance();
+    focusRoute($(id ? 'history-host-back' : 'execution-kind'));
+    if (id) return loadCollection('history');
   }
   function historyBadge(status) {
-    const labels = {completed:'成功',not_approved:'未通过审批'};
-    const badge = text('span', labels[status] || statusLabels[status] || status,'event-badge');
+    const badge = text('span', historyStatusLabel(status),'event-badge');
     badge.dataset.tone = ({completed:'success',failed:'failure',not_approved:'warning',timed_out:'failure',unknown:'warning'})[status] || 'neutral';
     return badge;
+  }
+  function historyStatusLabel(status) {
+    return ({completed:'成功',not_approved:'未通过审批'})[status] || statusLabels[status] || status;
+  }
+  function clearHistoryFilters() {
+    for (const id of ['history-from','history-to','history-session','history-status']) $(id).value = '';
+  }
+  function renderHistoryFilters() {
+    const from = $('history-from').value, to = $('history-to').value;
+    const labels = [];
+    if (from && to) labels.push(from === to ? from : from + ' 至 ' + to);
+    else if (from || to) labels.push(from ? from + ' 起' : '截至 ' + to);
+    if ($('history-session').value.trim()) labels.push('指定会话');
+    if ($('history-status').value) labels.push(historyStatusLabel($('history-status').value));
+    $('history-filter-summary').textContent = labels.join(' · ') || '不限';
+    $('history-filter-reset').disabled = !labels.length || !canEdit() || collectionLoading;
+    return labels.length > 0;
   }
   function renderHistory() {
     const home = executionKind === 'history' && !historyHost;
     $('history-hosts-view').hidden = !home;
+    $('history-no-hosts').hidden = state.hosts.length > 0;
     if (home) {
       const signature = JSON.stringify([state.hosts,canEdit()]);
       if (signature !== historyHostsSignature) {
         $('history-hosts').replaceChildren(...state.hosts.map(host=>{
-          const button = text('button',''); button.type='button'; button.dataset.historyHost=host.id;
-          button.append(text('strong',host.name || host.id),text('span',host.id+' · '+(host.sshAlias || host.hostname)+(!host.enabled?' · 已停用':''),'hint'));
+          const button = text('button','','history-destination'); button.type='button'; button.dataset.historyHost=host.id;
+          const address = host.sshAlias || host.hostname + (host.port && host.port !== 22 ? ':' + host.port : '');
+          const icon = text('span','›_','history-icon'); icon.setAttribute('aria-hidden','true');
+          const identity = text('span',host.id+' · '+address,'hint');
+          if (!host.enabled) identity.append(text('span',' · 已停用','host-availability'));
+          button.append(icon,text('strong',host.name || host.id),identity);
           button.disabled=!canEdit(); button.onclick=()=>selectHistoryHost(host.id);
           return button;
         }));
@@ -975,39 +1218,43 @@ h3 { font-size: 13px; font-weight: 600; }
       card.append(text('p', item.explanation || '未提供执行目的。'), text('div', new Date(item.startedAt).toLocaleString() + ' · ' + item.hostId + ' · #' + item.id, 'event-meta'));
       card.append(text('div', '聊天：' + item.threadId + ' · 会话：' + (item.sessionId || '未记录'), 'event-meta'));
       if (item.redacted || item.truncated) card.append(text('div', [item.redacted ? '敏感输出已隐藏' : '', item.truncated ? '输出已截断' : ''].filter(Boolean).join(' · '), 'event-meta'));
-      const button = text('button', '查看执行详情', 'small'); button.type = 'button'; button.dataset.historyId = String(item.id); button.disabled = !canEdit(); button.onclick = () => openHistory(item.id); card.append(button); return card;
+      const button = text('button', '查看执行详情', 'small record-link'); button.type = 'button'; button.dataset.historyId = String(item.id); button.disabled = !canEdit(); button.onclick = () => openHistory(item.id); card.append(button); return card;
     }));
-    $('history-empty').hidden = historyItems.length > 0; $('history-empty').textContent = collectionLoading ? '正在读取执行历史…' : '暂无符合条件的执行记录。';
+    const filtered = renderHistoryFilters();
+    $('history-empty').hidden = historyItems.length > 0; $('history-empty').textContent = collectionLoading ? '正在读取执行历史…' : filtered ? '没有符合当前筛选条件的记录。' : '暂无执行记录。';
     $('history-more').hidden = historyCursor === null; $('history-more').disabled = !canEdit() || collectionLoading;
   }
   $('history-back').onclick = historyBack; $('refresh-history-detail').onclick = () => selectedHistoryId !== null && loadHistoryDetail(selectedHistoryId);
   $('history-all').onclick=()=>selectHistoryHost('*');
   $('history-host-back').onclick=()=>selectHistoryHost(null);
   for (const id of ['history-from','history-to','history-session','history-status']) $(id).onchange=()=>loadCollection('history');
+  $('history-filter-reset').onclick = () => { clearHistoryFilters(); return loadCollection('history'); };
   $('refresh-history').onclick = () => loadCollection('history'); $('history-more').onclick = () => loadCollection('history', true);
 
   function renderGovernance() {
     for (const tab of ['hosts', 'audit', 'history']) { $('tab-' + tab).setAttribute('aria-selected', String(activeTab === tab)); $('tab-' + tab).disabled = busy; $(tab + '-view').hidden = activeTab !== tab; }
     fillHostFilter('audit-host'); fillHostFilter('archive-host'); renderHostDetail();
-    for (const id of ['save-policy', 'preview-run', 'add-root', 'add-blocked', 'add-command-rule', 'grant-minutes']) $(id).disabled = !canEdit();
-    for (const id of ['god-ack','policy-mode', 'policy-grant', 'policy-timeout', 'policy-concurrent', 'policy-output', 'preview-kind', 'preview-action', 'preview-command', 'preview-cwd', 'preview-path', 'preview-content']) $(id).disabled = !canEdit();
+    for (const id of ['preview-run', 'add-root', 'add-blocked', 'add-command-rule', 'grant-minutes']) $(id).disabled = !canEdit();
+    for (const mode of Object.keys(modeLabels)) $('mode-' + mode).disabled = !canEdit() || (mode === 'restricted' && $('legacy-mode-option').hidden);
+    for (const id of ['god-ack', 'policy-grant', 'policy-timeout', 'policy-concurrent', 'policy-output', 'preview-kind', 'preview-action', 'preview-command', 'preview-cwd', 'preview-path', 'preview-content']) $(id).disabled = !canEdit();
     const disableRow = el => { if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) el.disabled = !canEdit(); for (const child of el.children || []) disableRow(child); };
     for (const row of [...rootRows, ...localRootRows, ...blockedRows, ...commandRows]) disableRow(row.el);
     disableRow($('infrastructure-policy')); $('add-local-root').disabled = !canEdit();
     for (const row of actionRows) { row.control.disabled = !canEdit(); if(row.names) { row.names.disabled = !canEdit(); row.restrict.disabled = !canEdit(); } } for (const row of parameterRows) row.input.disabled = !canEdit();
-    for (const id of ['cancel-policy']) $(id).disabled = busy;
     for (const id of ['refresh-audit', 'audit-host', 'audit-result', 'refresh-history', 'history-status']) $(id).disabled = !canEdit() || collectionLoading;
     if (policyRecord) {
-      const current = state.policies.find(item => item.hostId === policyRecord.hostId);
-      if (current && current.revision !== policyRecord.revision) $('policy-revision').textContent = '已有更新版本，草稿已保留。请还原权限设置后重新修改并保存。';
+      if (currentPolicy().revision !== policyRecord.revision) $('policy-revision').textContent = '已有更新版本，草稿已保留。请还原权限设置后重新修改并保存。';
       const exists = state.hosts.some(host => host.id === policyRecord.hostId); if (!exists) { $('save-policy').disabled = true; $('preview-run').disabled = true; $('policy-revision').textContent = '该主机已删除；草稿未提交。'; }
     }
     if ($('lifecycle-panel').open) archiveControls();
     if (activeTab === 'audit') renderAudit(); if (activeTab === 'history') { renderHistory(); renderInfrastructure(); }
   }
   $('tab-hosts').onclick = () => selectTab('hosts'); $('tab-audit').onclick = () => selectTab('audit'); $('tab-history').onclick = () => selectTab('history');
-  $('add-root').onclick = () => { if (canEdit()) addRoot(); }; $('add-blocked').onclick = () => { if (canEdit()) addBlocked(); }; $('add-command-rule').onclick = () => { if (canEdit()) addCommandRule(); };
-  $('policy-mode').onchange = updatePolicyMode; $('cancel-policy').onclick = () => { if (canEdit() && policyRecord) fillPolicy(state.policies.find(item => item.hostId === policyRecord.hostId) || policyRecord, actionCatalog); };
+  for (const [id, add] of [['add-root', addRoot], ['add-blocked', addBlocked], ['add-command-rule', addCommandRule], ['add-local-root', addLocalRoot]]) {
+    $(id).onclick = () => { if (canEdit()) { add(); updateDraftState(); } };
+  }
+  for (const mode of Object.keys(modeLabels)) $('mode-' + mode).onchange = () => { updatePolicyMode(); updateDraftState(); };
+  $('cancel-policy').onclick = () => { if (canEdit() && policyRecord) fillPolicy(currentPolicy(), actionCatalog); };
   $('preview-kind').onchange = updatePreview; $('preview-action').onchange = updatePreview; $('preview-run').onclick = previewPolicy;
   $('preview-section').onkeydown = event => { if (event.key === 'Enter' && event.target.tagName === 'INPUT') { event.preventDefault(); previewPolicy(); } };
   $('refresh-audit').onclick = () => loadCollection('audit'); $('audit-host').onchange = $('audit-result').onchange = () => loadCollection('audit'); $('audit-more').onclick = () => loadCollection('audit', true);
@@ -1055,9 +1302,10 @@ h3 { font-size: 13px; font-weight: 600; }
       if (!canEdit() || !row.verified.checked || !row.candidates.length) return;
       const candidates = [...row.candidates], fingerprints = [...row.fingerprints];
       if (routingSaved() && state.hosts.find(host => host.id === editingId)?.connection?.mode === 'managed') {
+        const at = epoch, hostId = editingId, version = row.version;
         const previous = await Promise.all(row.confirmed.map(fingerprint));
-        if (!canEdit()) return;
-        const saved = await mutate('ssh_host_keys_confirm', {hostId:editingId,hopIndex:row.hopIndex(),candidates,fingerprints,expectedCurrentFingerprints:previous,confirmed:true});
+        if (at !== epoch || !canEdit() || !routingSaved() || !keyEditors.includes(row) || row.version !== version || !row.verified.checked) return;
+        const saved = await mutate('ssh_host_keys_confirm', {hostId,hopIndex:row.hopIndex(),candidates,fingerprints,expectedCurrentFingerprints:previous,confirmed:true});
         if (!saved) return;
         row.confirmed = candidates; row.input.value = candidates.join('\n'); connectionBaseline = JSON.stringify(connectionDraft());
       } else { row.confirmed = candidates; row.input.value = candidates.join('\n'); }
@@ -1128,7 +1376,6 @@ h3 { font-size: 13px; font-weight: 600; }
     for(const row of infrastructurePolicyFields){if(row.type==='shell'){if(row.input.checked)result.jobs.allowedShells.push(row.value);}else result[row.kind][row.key]=row.type==='boolean'?row.input.checked:row.type==='number'?Number(row.input.value):namesList(row.input.value);}
     return result;
   }
-  $('add-local-root').onclick=()=>{if(canEdit())addLocalRoot();};
 
   let executionKind='history',infrastructureItems=[],infrastructureCursor=null,infrastructureSelected=null,infrastructureEntry=null,infrastructureLoading=false,infrastructureSequence=0,infrastructureOutput='';
   const terminalStatuses=new Set(['completed','failed','cancelled','timed_out','denied']);
@@ -1136,13 +1383,13 @@ h3 { font-size: 13px; font-weight: 600; }
   function infrastructureTool(suffix){return 'ssh_'+(executionKind==='jobs'?'job':'transfer')+'_'+suffix;}
   function infrastructureIdentity(){return executionKind==='jobs'?{taskId:infrastructureSelected}:{transferId:infrastructureSelected};}
   async function loadInfrastructure(append=false){
-    if(!canEdit() || executionKind==='history')return;
+    if(!canEdit() || activeTab!=='history' || executionKind==='history')return;
     const sequence=++infrastructureSequence,at=epoch,kind=executionKind,thread=state.threadId;infrastructureLoading=true;renderInfrastructure();
     try{const result=await tool(infrastructureTool('list'),{limit:20,...(append&&infrastructureCursor!==null?{cursor:infrastructureCursor}:{})});if(sequence!==infrastructureSequence || at!==epoch || kind!==executionKind || thread!==state.threadId || result.state.threadId!==thread)return;const items=result[kind];if(!Array.isArray(items))throw new Error('未收到完整运行列表。');applyState(result.state);infrastructureItems=append?[...infrastructureItems,...items.filter(item=>!infrastructureItems.some(old=>old.id===item.id))]:items;infrastructureCursor=result.nextCursor??null;}
     catch(error){if(sequence===infrastructureSequence)showError(error);}finally{if(sequence===infrastructureSequence){infrastructureLoading=false;renderInfrastructure();}}
   }
   async function readInfrastructure(append=false){
-    if(!canEdit() || !infrastructureSelected)return;const sequence=++infrastructureSequence,at=epoch,kind=executionKind,thread=state.threadId;infrastructureLoading=true;renderInfrastructure();
+    if(!canEdit() || activeTab!=='history' || !infrastructureSelected)return;const sequence=++infrastructureSequence,at=epoch,kind=executionKind,thread=state.threadId;infrastructureLoading=true;renderInfrastructure();
     const selected=infrastructureEntry || infrastructureItems.find(item=>item.id===infrastructureSelected);
     const canRefresh=Boolean(selected && activeGrant(selected.hostId) && state.hosts.find(host=>host.id===selected.hostId)?.enabled);
     try{const args={...infrastructureIdentity(),...(kind==='jobs'?{limitBytes:32768,refresh:!append && canRefresh,...(append?{cursor:infrastructureEntry?.nextCursor}: {})}:{})};const result=await tool(infrastructureTool('read'),args);if(sequence!==infrastructureSequence || at!==epoch || kind!==executionKind || thread!==state.threadId || result.state.threadId!==thread)return;const entry=result[kind==='jobs'?'job':'transfer'];if(!entry || entry.id!==infrastructureSelected)throw new Error('未收到对应运行详情。');applyState(result.state);infrastructureEntry=entry;infrastructureOutput=append?infrastructureOutput+(entry.output || ''):entry.output || '';}
@@ -1156,11 +1403,12 @@ h3 { font-size: 13px; font-weight: 600; }
   function renderInfrastructure(){
     const showing=executionKind!=='history',detail=Boolean(infrastructureSelected),entry=infrastructureEntry;
     $('execution-kind').value=executionKind;$('execution-kind').disabled=busy;
+    $('infrastructure-back').hidden=!showing || !detail;$('infrastructure-back').disabled=busy;
     $('infrastructure-view').hidden=!showing;if(!showing)return;
-    $('infrastructure-list').hidden=detail;$('infrastructure-detail').hidden=!detail;$('infrastructure-back').hidden=!detail;$('infrastructure-back').disabled=busy;
+    $('infrastructure-list').hidden=detail;$('infrastructure-detail').hidden=!detail;
     $('infrastructure-refresh').disabled=!canEdit() || infrastructureLoading;
     $('infrastructure-more').hidden=detail || infrastructureCursor===null;$('infrastructure-more').disabled=!canEdit() || infrastructureLoading;
-    if(!detail){$('infrastructure-list').replaceChildren(...infrastructureItems.map(item=>{const card=text('article','','event-card');const title=executionKind==='jobs'?(item.summary || item.operation?.command || '远程任务'):(item.direction==='upload'?'上传':'下载')+' · '+(item.remotePath || item.id);card.append(text('div',title,'event-title'),text('p',(infrastructureLabels[item.status] || item.status)+' · '+item.hostId),text('p',item.id,'event-meta'));const button=text('button','查看运行详情','small');button.type='button';button.dataset[executionKind==='jobs'?'taskId':'transferId']=item.id;button.disabled=!canEdit() || infrastructureLoading;button.onclick=()=>{infrastructureSelected=item.id;infrastructureEntry=null;infrastructureOutput='';return readInfrastructure();};card.append(button);return card;}));if(!infrastructureItems.length)$('infrastructure-list').append(text('p',infrastructureLoading?'正在读取运行记录…':'暂无运行记录。','hint'));}
+    if(!detail){$('infrastructure-list').replaceChildren(...infrastructureItems.map(item=>{const card=text('article','','event-card');const title=executionKind==='jobs'?(item.summary || item.operation?.command || '远程任务'):(item.direction==='upload'?'上传':'下载')+' · '+(item.remotePath || item.id);card.append(text('div',title,'event-title'),text('p',(infrastructureLabels[item.status] || item.status)+' · '+item.hostId),text('p',item.id,'event-meta'));const button=text('button','查看运行详情','small');button.type='button';button.dataset[executionKind==='jobs'?'taskId':'transferId']=item.id;button.disabled=!canEdit() || infrastructureLoading;button.onclick=()=>openInfrastructure(item.id);card.append(button);return card;}));if(!infrastructureItems.length)$('infrastructure-list').append(text('p',infrastructureLoading?'正在读取运行记录…':'暂无运行记录。','hint'));}
     const controlsEnabled=canEdit()&&!infrastructureLoading&&entry&&activeGrant(entry.hostId)&&state.hosts.find(host=>host.id===entry.hostId)?.enabled;
     const storageKey=detail ? [state.threadId,executionKind,infrastructureSelected].join('/') : '';
     const measured=$('infrastructure-storage-result');
@@ -1174,20 +1422,38 @@ h3 { font-size: 13px; font-weight: 600; }
     $('infrastructure-output-more').hidden=!detail || executionKind!=='jobs' || !entry?.hasMore;$('infrastructure-output-more').disabled=!canEdit() || infrastructureLoading;
     if(detail){const box=$('infrastructure-detail');if(!entry){box.replaceChildren(text('p',infrastructureLoading?'正在读取详情…':'详情未载入，请刷新重试。'));return;}const nodes=[text('h3',(executionKind==='jobs'?'任务 ':'传输 ')+entry.id),text('p','主机：'+entry.hostId+' · '+(infrastructureLabels[entry.status] || entry.status))];if(executionKind==='jobs'){nodes.push(text('p','观测状态：'+(typeof entry.observation==='object'?JSON.stringify(entry.observation):({confirmed:'已核实',unknown:'未知，需核对'}[entry.observation] || entry.observation || '未知'))+' · 退出码：'+(entry.exitCode??'未取得')),text('pre',entry.operation?.command || ''),text('pre',entry.redacted?'敏感输出已隐藏。':infrastructureOutput || '（当前无输出）'));if(entry.truncated)nodes.push(text('p','输出达到上限，已截断。','hint'));if(entry.signal || entry.terminationReason)nodes.push(text('p',[entry.signal,entry.terminationReason].filter(Boolean).join(' · ')));}else{const progress=document.createElement('progress');progress.className='infrastructure-progress';progress.max=Math.max(1,entry.totalBytes || 0);progress.value=entry.bytesTransferred || 0;progress.setAttribute('aria-label','传输进度');nodes.push(text('p',(entry.direction==='upload'?'上传':'下载')+' · '+(entry.bytesTransferred || 0)+' / '+(entry.totalBytes??'未知')+' 字节'),progress,text('p','本地：'+entry.localPath),text('p','远端：'+entry.remotePath));if(entry.sha256)nodes.push(text('p','SHA256：'+entry.sha256,'key-fingerprint'));if(entry.error)nodes.push(text('p',typeof entry.error==='string'?entry.error:JSON.stringify(entry.error),'warning-note'));}box.replaceChildren(...nodes);}
   }
-  $('execution-kind').value='history';$('execution-kind').onchange=()=>{infrastructureSequence++;infrastructureLoading=false;executionKind=$('execution-kind').value;infrastructureItems=[];infrastructureCursor=null;infrastructureSelected=null;infrastructureEntry=null;renderGovernance();return executionKind==='history'?loadCollection('history'):loadInfrastructure();};
+  function openInfrastructure(id) {
+    if (!canEdit() || activeTab !== 'history' || executionKind === 'history') return;
+    epoch++; infrastructureSelected = id; infrastructureEntry = null; infrastructureOutput = '';
+    const reading = readInfrastructure();
+    focusRoute($('infrastructure-back'));
+    return reading;
+  }
+  $('execution-kind').value = 'history';
+  $('execution-kind').onchange = () => {
+    if (busy || activeTab !== 'history') return;
+    epoch++; resetExecutionRoute($('execution-kind').value); clearError(); renderGovernance();
+    focusRoute($('execution-kind'));
+    if (executionKind !== 'history') return loadInfrastructure();
+  };
   $('infrastructure-refresh').onclick=()=>infrastructureSelected?readInfrastructure():loadInfrastructure();$('infrastructure-more').onclick=()=>loadInfrastructure(true);$('infrastructure-output-more').onclick=()=>readInfrastructure(true);
-  $('infrastructure-back').onclick=()=>{if(busy)return;infrastructureSequence++;infrastructureLoading=false;infrastructureSelected=null;infrastructureEntry=null;renderInfrastructure();};
+  $('infrastructure-back').onclick = () => {
+    if (busy) return;
+    epoch++; infrastructureSequence++; infrastructureLoading = false;
+    infrastructureSelected = infrastructureEntry = null; infrastructureOutput = '';
+    clearError(); renderInfrastructure(); focusRoute($('execution-kind'));
+  };
   $('infrastructure-cancel').onclick=()=>controlInfrastructure('cancel');$('infrastructure-resume').onclick=()=>controlInfrastructure('resume');$('infrastructure-reconcile').onclick=()=>controlInfrastructure('reconcile');
 
-  let archiveSequence=0, archiveCursor=null, archiveItems=[], archiveBusy=false, archiveButtons=[], measuringInfrastructure=false;
+  let archiveSequence=0, archiveCursor=null, archiveItems=[], archiveActivity=null, archiveButtons=[], measuringInfrastructure=false;
   $('infrastructure-storage').onclick=async()=>{
-    const entry=infrastructureEntry, box=$('infrastructure-storage-result'), key=box.dataset.record;
+    const entry=infrastructureEntry, box=$('infrastructure-storage-result'), key=box.dataset.record, at=epoch;
     if(!canEdit() || !entry || measuringInfrastructure || !activeGrant(entry.hostId))return;
     measuringInfrastructure=true; renderInfrastructure();
     try{
       const data=await tool('ssh_lifecycle_inspect',{hostId:entry.hostId,kind:executionKind==='jobs'?'job':'transfer',id:entry.id,explanation:'测量所选记录的远端私有文件占用：'+entry.id});
-      if(box.dataset.record===key){box.textContent='远端私有文件 '+formatBytes(data.measurement.bytes);box.hidden=false;}
-    }catch(error){showError(error);}finally{measuringInfrastructure=false;renderInfrastructure();}
+      if(at===epoch && box.dataset.record===key){box.textContent='远端私有文件 '+formatBytes(data.measurement.bytes);box.hidden=false;}
+    }catch(error){if(at===epoch)showError(error);}finally{measuringInfrastructure=false;if(activeTab==='history')renderInfrastructure();}
   };
   function formatBytes(n){
     if(!Number.isFinite(n))return '未测量';
@@ -1196,8 +1462,8 @@ h3 { font-size: 13px; font-weight: 600; }
     return (n/1048576).toFixed(1)+' MiB';
   }
   function archiveControls() {
-    for(const {item,button} of archiveButtons)button.disabled=!canEdit() || archiveBusy || item.remoteCleaned || item.threadId!==state.threadId || !activeGrant(item.hostId) || !state.hosts.find(host=>host.id===item.hostId)?.enabled;
-    for(const id of ['storage-refresh','retention-save','archive-sweep','archive-more','retention-days','archive-host']) $(id).disabled=!canEdit() || archiveBusy;
+    for(const {item,button} of archiveButtons)button.disabled=!canEdit() || Boolean(archiveActivity) || item.remoteCleaned || item.threadId!==state.threadId || !activeGrant(item.hostId) || !state.hosts.find(host=>host.id===item.hostId)?.enabled;
+    for(const id of ['storage-refresh','retention-save','archive-sweep','archive-more','retention-days','archive-host']) $(id).disabled=!canEdit() || Boolean(archiveActivity);
   }
   function renderArchives() {
     const panel=$('archive-list');archiveButtons=[];
@@ -1208,17 +1474,19 @@ h3 { font-size: 13px; font-weight: 600; }
       if(!item.remoteCleaned && item.threadId===state.threadId && activeGrant(item.hostId) && state.hosts.find(host=>host.id===item.hostId)?.enabled) {
         for(const collect of [false,true]) {
           const button=text('button',collect?'回收私有状态':'测量远端占用',collect?'small danger':'small');
-          archiveButtons.push({item,button}); button.disabled=!canEdit() || archiveBusy;
+          archiveButtons.push({item,button}); button.disabled=!canEdit() || Boolean(archiveActivity);
           button.onclick=async()=>{
-            if(!canEdit() || archiveBusy || item.threadId!==state.threadId || !activeGrant(item.hostId))return;
-            archiveBusy=true; archiveControls();
+            if(!canEdit() || archiveActivity || item.threadId!==state.threadId || !activeGrant(item.hostId))return;
+            const sequence = archiveSequence;
+            archiveActivity='operation'; archiveControls();
             try {
               const data=await tool(collect?'ssh_lifecycle_collect':'ssh_lifecycle_inspect',{hostId:item.hostId,kind:item.kind,id:item.id,
                 explanation:(collect?'在原聊天核验并回收已归档记录的私有状态，保留发布制品：':'核验此记录的远端私有状态占用：')+item.id},180000);
+              if (sequence !== archiveSequence) return;
               const stats=data.measurement;
               result.textContent='远端私有文件 '+formatBytes(stats.bytes)+' · 已回收 '+formatBytes(stats.reclaimedBytes)+' · 保留 '+formatBytes(stats.retainedBytes);
               if(collect && stats.collected) {item.remoteCleaned=true; button.disabled=true;}
-            } catch(error){showError(error);} finally {archiveBusy=false;archiveControls();}
+            } catch(error){if(sequence===archiveSequence)showError(error);} finally {archiveActivity=null;archiveControls();}
           };
           card.append(button);
         }
@@ -1229,8 +1497,8 @@ h3 { font-size: 13px; font-weight: 600; }
     $('archive-more').hidden=archiveCursor===null;
   }
   async function loadStorage(append=false) {
-    if(!canEdit() || archiveBusy || !$('lifecycle-panel').open)return;
-    archiveBusy=true;archiveControls();
+    if(!canEdit() || archiveActivity || activeTab!=='history' || historyHost || executionKind!=='history' || !$('lifecycle-panel').open)return;
+    archiveActivity='overview';archiveControls();
     const seq=++archiveSequence, thread=state.threadId;
     try {
       const filterHost=$('archive-host').value;
@@ -1242,16 +1510,17 @@ h3 { font-size: 13px; font-weight: 600; }
       if(data.lastSweepError)$('storage-summary').append(text('p','上次自动归档未完成：'+data.lastSweepError,'warning-note'));
       if(!append)$('retention-days').value=String(o.retentionDays);
       archiveItems=append?[...archiveItems,...data.archive.items]:data.archive.items;archiveCursor=data.archive.nextCursor;
-    } catch(error){showError(error);} finally {archiveBusy=false; archiveControls();renderArchives();}
+    } catch(error){if(seq===archiveSequence)showError(error);} finally {if(seq===archiveSequence){archiveActivity=null; archiveControls();renderArchives();}}
   }
   $('lifecycle-panel').ontoggle=()=>{if($('lifecycle-panel').open)loadStorage();};
   $('archive-more').onclick=()=>loadStorage(true);$('storage-refresh').onclick=()=>loadStorage();
   $('archive-host').onchange=()=>{archiveItems=[];archiveCursor=null;renderArchives();return loadStorage();};
   async function storageChange(name,args){
-    if(!canEdit() || archiveBusy)return;
-    archiveBusy=true;archiveControls();
-    try{await tool(name,args);}catch(error){showError(error);return;}finally{archiveBusy=false;archiveControls();}
-    await loadStorage();
+    if(!canEdit() || archiveActivity)return;
+    const seq=archiveSequence;
+    archiveActivity='operation';archiveControls();
+    try{await tool(name,args);}catch(error){if(seq===archiveSequence)showError(error);return;}finally{archiveActivity=null;archiveControls();}
+    if(seq===archiveSequence)await loadStorage();
   }
   $('retention-save').onclick=()=>{if($('retention-days').reportValidity())return storageChange('ssh_lifecycle_configure',{retentionDays:Number($('retention-days').value)});};
   $('archive-sweep').onclick=()=>storageChange('ssh_lifecycle_sweep',{});
@@ -1285,7 +1554,7 @@ h3 { font-size: 13px; font-weight: 600; }
     render();
     try {
       if (window.parent === window) throw new Error('请从 Codex 聊天中打开 SSH 主机面板。');
-      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.5.0' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
+      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.5.1' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
       hostStyle(result.hostContext); notify('ui/notifications/initialized'); connected = true; controls();
       await refresh();
       timer = setInterval(() => { if (!document.hidden) refresh(true); }, 5000);

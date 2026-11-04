@@ -104,8 +104,10 @@ test('managed connection saves structured jumps and preserves confirmed host key
 test('policy editor preserves infrastructure fields and exact directory rules', async () => {
   const h=await harness(initial(),(call,state)=>call.name==='ssh_permissions'?reply(state,{policy:{hostId:'prod',revision:3,policy:policy()},actions:catalog}):undefined);
   await h.findAction('policy','prod').click(); await settle();
+  h.ids.get('policy-timeout').value='91';
   await h.ids.get('policy-form').onsubmit({preventDefault(){}}); await settle();
   const saved=h.calls.find(c=>c.name==='ssh_policy_save').arguments.policy;
+  assert.equal(saved.timeoutSeconds,91);
   for(const key of ['localRoots','actionArguments','jobs','transfers','roots']) assert.deepEqual(saved[key],policy()[key],key);
 });
 

@@ -12,7 +12,7 @@ import { normalizeHostOperation } from './host-operation.mjs';
 import { infrastructureDefinitions } from './infrastructure-api.mjs';
 import { createInfrastructureRuntime } from './infrastructure-runtime.mjs';
 
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const URI = 'ui://codex-ssh-control/manager-v1';
 const MIME = 'text/html;profile=mcp-app';
 const uiToken = randomBytes(32).toString('hex');
@@ -334,7 +334,7 @@ async function dispatch(method,params={},signal) {
    if(params.uri!==URI) rpcError(-32602,'Unknown resource URI');
    return {contents:[{uri:URI,mimeType:MIME,text:html,_meta:{
     'openai/ui':{preferredDisplayMode:'fullscreen',availableDisplayModes:['fullscreen']},
-    ui:{prefersBorder:true,csp:{connectDomains:[],resourceDomains:[]}},
+    ui:{prefersBorder:true,permissions:{clipboardWrite:{}},csp:{connectDomains:[],resourceDomains:[]}},
    }}]};
   case 'tools/call': return call(params,signal);
   default: rpcError(-32601,'Method not supported: '+method);

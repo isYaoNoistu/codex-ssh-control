@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { webcrypto } from 'node:crypto';
 import vm from 'node:vm';
 
 class Element {
@@ -64,8 +65,8 @@ async function harness(startState = initial(), override) {
       listeners.get('message')?.({ source: parent, data: { jsonrpc: '2.0', id: message.id, result } });
     });
   } };
-  const window = { parent, addEventListener: (event, handler) => listeners.set(event, handler) };
-  const context = vm.createContext({ document, window, console, Map, Set, Object, Array, String, Number, Boolean, Date, Error,
+  const window = { parent, navigator: {}, addEventListener: (event, handler) => listeners.set(event, handler) };
+  const context = vm.createContext({ document, window, crypto: webcrypto, atob, btoa, Uint8Array, console, Map, Set, Object, Array, String, Number, Boolean, Date, Error,
     setTimeout: (handler, delay) => { const id = ++nextTimer; timeouts.set(id, handler); timeoutDelays.push(delay); return id; }, clearTimeout: id => timeouts.delete(id),
     setInterval: handler => { intervals.push(handler); return intervals.length; }, clearInterval() {},
   });
@@ -79,7 +80,7 @@ async function harness(startState = initial(), override) {
     for (const element of ids.values()) { const found = walk(element); if (found) return found; }
     assert.fail('Missing action ' + action + ' for ' + id);
   }
-  return { ids, calls, messages, intervals, timeouts, timeoutDelays, document, documentListeners, listeners, parent, findAction, settle, state: () => state };
+  return { ids, calls, messages, intervals, timeouts, timeoutDelays, window, document, documentListeners, listeners, parent, findAction, settle, state: () => state };
 }
 
 test('initializes bridge then automatically reads authoritative chat state', async () => {
@@ -635,21 +636,100 @@ test('policy form saves editable directory and command rows with revision and no
   assert.equal(h.ids.get('policy-editor').hidden, false);
 });
 
+function choosePolicyMode(h, selected) {
+  for (const mode of ['readonly', 'approval', 'god', 'restricted']) h.ids.get('mode-' + mode).checked = mode === selected;
+  h.ids.get('mode-' + selected).onchange();
+}
+
+test('permission choices distinguish a saved legacy policy from the draft and skip unchanged saves', async () => {
+  const h = await harness(initial(), governanceReply);
+  await h.findAction('policy', 'prod').click(); await h.settle();
+  assert.equal(h.ids.get('legacy-mode-option').hidden, false);
+  assert.equal(h.ids.get('mode-restricted').checked, true);
+  assert.equal(h.ids.get('current-restricted').hidden, false);
+  assert.equal(h.ids.get('save-policy').disabled, true);
+  assert.equal(h.ids.get('policy-save-notice').hidden, true);
+  await h.ids.get('policy-form').onsubmit({ preventDefault() {} });
+  assert.equal(h.calls.some(call => call.name === 'ssh_policy_save'), false);
+  choosePolicyMode(h, 'readonly');
+  assert.equal(h.ids.get('current-restricted').hidden, false);
+  assert.equal(h.ids.get('current-readonly').hidden, true);
+  assert.equal(h.ids.get('save-policy').disabled, false);
+  assert.equal(h.ids.get('policy-save-notice').hidden, false);
+  await h.ids.get('cancel-policy').click();
+  assert.equal(h.ids.get('mode-restricted').checked, true);
+  assert.equal(h.ids.get('save-policy').disabled, true);
+  await h.ids.get('add-root').click();
+  assert.equal(h.ids.get('save-policy').disabled, false);
+  await findClass(h.ids.get('policy-roots'), 'remove-row').click();
+  assert.equal(h.ids.get('save-policy').disabled, true);
+});
+
 test('god mode activation requires a fresh acknowledgement for the selected host and revision', async () => {
   const h=await harness(initial(),governanceReply);
   await h.findAction('policy','prod').click(); await h.settle();
-  const mode=h.ids.get('policy-mode'),ack=h.ids.get('god-ack');
-  mode.value='god'; mode.onchange();
+  const ack=h.ids.get('god-ack');
+  choosePolicyMode(h, 'god');
   assert.equal(h.ids.get('god-warning').hidden,false);
   assert.match(h.ids.get('god-target').textContent,/prod/);
   const submit=()=>h.ids.get('policy-form').onsubmit({preventDefault(){}});
   await submit();
   assert.equal(h.calls.some(c=>c.name==='ssh_policy_save'),false);
   ack.checked=true;
-  mode.value='readonly'; mode.onchange();
+  choosePolicyMode(h, 'readonly');
   assert.equal(ack.checked,false);
-  mode.value='god'; mode.onchange(); ack.checked=true; await submit();
+  choosePolicyMode(h, 'god'); ack.checked=true; await submit();
   assert.deepEqual(h.calls.find(c=>c.name==='ssh_policy_save').arguments.godAck,{hostId:'prod',expectedRevision:3,confirmed:true});
+});
+
+test('opening an already active god policy shows its saved status without another elevation prompt', async () => {
+  const h = await harness(initial(), (call, state) => {
+    const result = governanceReply(call, state);
+    if (result) result.structuredContent.policy.policy.mode = 'god';
+    return result;
+  });
+  await h.findAction('policy', 'prod').click(); await h.settle();
+  assert.equal(h.ids.get('legacy-mode-option').hidden, true);
+  assert.equal(h.ids.get('mode-restricted').disabled, true);
+  assert.equal(h.ids.get('mode-god').checked, true);
+  assert.equal(h.ids.get('current-god').hidden, false);
+  assert.match(h.ids.get('mode-god').getAttribute('aria-describedby'), /current-god/);
+  assert.equal(h.ids.get('god-warning').hidden, true);
+  assert.equal(h.ids.get('save-policy').disabled, true);
+});
+
+test('a newer policy updates the effective badge while preserving the selected draft', async () => {
+  const record = { hostId: 'prod', revision: 3, policy: policy() };
+  const h = await harness(initial({ policies: [record] }), governanceReply);
+  await h.findAction('policy', 'prod').click(); await h.settle();
+  choosePolicyMode(h, 'approval');
+  h.state().policies[0] = { ...record, revision: 4, policy: { ...policy(), mode: 'readonly' } };
+  h.intervals[0](); await h.settle();
+  assert.equal(h.ids.get('mode-approval').checked, true);
+  assert.equal(h.ids.get('current-readonly').hidden, false);
+  assert.equal(h.ids.get('current-restricted').hidden, true);
+  assert.match(h.ids.get('mode-readonly').getAttribute('aria-describedby'), /current-readonly/);
+  assert.doesNotMatch(h.ids.get('mode-restricted').getAttribute('aria-describedby'), /current-restricted/);
+  assert.equal(h.ids.get('save-policy').disabled, true);
+  assert.equal(h.ids.get('cancel-policy').disabled, false);
+  await h.ids.get('policy-form').onsubmit({ preventDefault() {} });
+  assert.equal(h.calls.some(call => call.name === 'ssh_policy_save'), false);
+});
+
+test('god acknowledgement survives an unchanged refresh but expires when the SSH target changes', async () => {
+  const h = await harness(initial(), governanceReply);
+  await h.findAction('policy', 'prod').click(); await h.settle();
+  choosePolicyMode(h, 'god');
+  const ack = h.ids.get('god-ack');
+  ack.checked = true;
+  h.intervals[0](); await h.settle();
+  assert.equal(ack.checked, true);
+  h.state().hosts[0].hostname = 'replacement.example.invalid';
+  h.intervals[0](); await h.settle();
+  assert.match(h.ids.get('god-target').textContent, /replacement\.example\.invalid/);
+  assert.equal(ack.checked, false);
+  await h.ids.get('policy-form').onsubmit({ preventDefault() {} });
+  assert.equal(h.calls.some(call => call.name === 'ssh_policy_save'), false);
 });
 
 test('policy conflict preserves form values and automatic refresh does not replace the draft', async () => {
@@ -670,7 +750,7 @@ test('mutating action form cannot select automatic allow and advanced mode keeps
   await h.findAction('policy', 'prod').click(); await h.settle();
   const action = findData(h.ids.get('policy-actions'), 'actionId', 'service.restart');
   assert.equal(action.children.some(child => child.value === 'allow'), false);
-  h.ids.get('policy-mode').value = 'approval'; h.ids.get('policy-mode').onchange();
+  choosePolicyMode(h, 'approval');
   assert.equal(h.ids.get('shell-warning').hidden, false);
   assert.match(h.ids.get('shell-warning').textContent, /目录.*不能|不能.*目录/);
   assert.match(h.ids.get('protected-resources').textContent, /不可关闭/);
@@ -925,6 +1005,142 @@ async function openHostHistory(h, id='prod') {
   await findData(h.ids.get('history-hosts'), 'historyHost', id).click(); await h.settle();
 }
 
+test('top-level switches and reselection return hosts to the list and protect drafts until a destination is confirmed', async () => {
+  const h = await harness(initial(), governanceReply);
+  const click = id => h.ids.get(id).click();
+  await h.findAction('edit', 'prod').click();
+  await click('tab-history'); await click('tab-hosts');
+  assert.equal(h.ids.get('host-list-view').hidden, false);
+  await h.findAction('edit', 'prod').click();
+  h.ids.get('host-name').value = 'unsaved name';
+  await click('detail-tab-policy');
+  h.ids.get('policy-timeout').value = '91';
+  for (const tab of ['tab-hosts', 'tab-audit', 'tab-history']) {
+    const before = h.calls.length;
+    await click(tab);
+    assert.equal(h.ids.get('hosts-view').hidden, false);
+    assert.equal(h.ids.get('discard-confirmation').hidden, false);
+    await click('keep-editing');
+    assert.equal(h.ids.get('discard-confirmation').hidden, true);
+    assert.equal(h.ids.get('host-name').value, 'unsaved name');
+    assert.equal(h.ids.get('policy-timeout').value, '91');
+    assert.equal(h.calls.length, before);
+  }
+  await click('tab-history'); await click('discard-detail');
+  assert.equal(h.ids.get('history-hosts-view').hidden, false);
+  assert.equal(h.ids.get('tab-history').getAttribute('aria-selected'), 'true');
+  await click('tab-hosts'); await h.findAction('edit', 'prod').click();
+  assert.equal(h.ids.get('host-name').value, 'prod');
+  assert.equal(h.calls.some(call => ['ssh_host_save', 'ssh_policy_save'].includes(call.name)), false);
+});
+
+test('Back keeps the selected history list and filters while reselecting History clears them without re-reading details', async () => {
+  const h = await harness(initial(), (call, state) => {
+    if (call.name === 'ssh_history_list') return { structuredContent: { state, items: [historyItem(3)], nextCursor: 3 } };
+    if (call.name === 'ssh_history_get') return { structuredContent: { state, entry: historyDetail(3) } };
+  });
+  await openHostHistory(h);
+  const session = h.ids.get('history-session');
+  session.value = 'session-a'; await session.onchange();
+  await findData(h.ids.get('history-list'), 'historyId', '3').click();
+  await h.ids.get('history-back').click();
+  assert.equal(h.ids.get('history-host-title').textContent, 'prod');
+  assert.equal(session.value, 'session-a');
+  assert.equal(h.ids.get('history-more').hidden, false);
+  await findData(h.ids.get('history-list'), 'historyId', '3').click();
+  const before = h.calls.length;
+  h.document.documentElement.scrollTop = 600;
+  await h.ids.get('tab-history').click();
+  assert.equal(h.ids.get('history-hosts-view').hidden, false);
+  assert.equal(h.ids.get('history-detail-view').hidden, true);
+  assert.equal(session.value, '');
+  assert.equal(h.document.documentElement.scrollTop, 0);
+  assert.equal(h.calls.length, before);
+});
+
+test('discarding a host edit while its key fingerprint is being checked cannot confirm keys for the next host', async () => {
+  const original = 'ssh-ed25519 ' + Buffer.from('old public key').toString('base64');
+  const candidate = 'ssh-ed25519 ' + Buffer.from('new public key').toString('base64');
+  const h = await harness(initial({ hosts: [host('prod', { connection: { mode: 'managed', hostKeys: [original], jumpHosts: [] } }), host('uat')] }));
+  await h.findAction('edit', 'prod').click();
+  const keys = h.ids.get('target-host-keys');
+  const input = findData(keys, 'field', 'publicKeys');
+  input.value = candidate; await input.oninput();
+  const verified = findData(keys, 'field', 'verified');
+  verified.checked = true; verified.onchange();
+  const confirming = findData(keys, 'field', 'confirm').click();
+  await h.ids.get('tab-hosts').click(); await h.ids.get('discard-detail').click();
+  await h.findAction('edit', 'uat').click(); await confirming;
+  assert.equal(h.calls.some(call => call.name === 'ssh_host_keys_confirm'), false);
+  assert.equal(h.ids.get('detail-title').textContent, 'uat');
+});
+
+for (const [kind, prefix, attribute] of [['jobs', 'job', 'taskId'], ['transfers', 'transfer', 'transferId']]) {
+  test(kind + ' details and late replies cannot follow the user back to the History root', async () => {
+    let release;
+    const record = { id: 'test-run', hostId: 'prod', status: 'running' };
+    const h = await harness(initial({ grantedHostIds: ['prod'] }), (call, state) => {
+      if (call.name === 'ssh_' + prefix + '_list') return { structuredContent: { state, [kind]: [record], nextCursor: null } };
+      if (call.name === 'ssh_' + prefix + '_read') return new Promise(resolve => {
+        release = () => resolve({ isError: true, content: [{ type: 'text', text: 'obsolete error' }] });
+      });
+    });
+    await h.ids.get('tab-history').click();
+    const select = h.ids.get('execution-kind');
+    select.value = kind; await select.onchange();
+    const pending = findData(h.ids.get('infrastructure-list'), attribute, record.id).click(); await h.settle();
+    const before = h.calls.length;
+    await h.ids.get('tab-hosts').click();
+    // Fire the second selection without waiting for the old request to settle.
+    const returning = h.ids.get('tab-history').click(); await h.settle();
+    assert.equal(select.value, 'history');
+    assert.equal(h.ids.get('history-hosts-view').hidden, false);
+    assert.equal(h.ids.get('infrastructure-view').hidden, true);
+    assert.equal(h.calls.length, before);
+    release(); await pending; await returning;
+    assert.equal(h.ids.get('error-banner').hidden, true);
+  });
+}
+
+test('a status refresh started on another tab cannot refresh a newly opened remote job', async () => {
+  let release, statusReads = 0;
+  const job = { id: 'test-job', hostId: 'prod', status: 'running' };
+  const h = await harness(initial({ grantedHostIds: ['prod'] }), (call, state) => {
+    if (call.name === 'ssh_status' && ++statusReads === 2) return new Promise(resolve => {
+      release = () => resolve({ structuredContent: { state } });
+    });
+    if (call.name === 'ssh_job_list') return { structuredContent: { state, jobs: [job] } };
+    if (call.name === 'ssh_job_read') return { structuredContent: { state, job } };
+  });
+  const refresh = h.ids.get('refresh').click(); await h.settle();
+  await h.ids.get('tab-history').click();
+  const select = h.ids.get('execution-kind');
+  select.value = 'jobs'; await select.onchange();
+  await findData(h.ids.get('infrastructure-list'), 'taskId', job.id).click();
+  release(); await refresh;
+  assert.equal(h.calls.filter(call => call.name === 'ssh_job_read').length, 1);
+});
+
+test('a new History visit can reopen storage without receiving the old overview or errors', async () => {
+  let release;
+  const h = await harness(initial(), (call, state) => {
+    if (call.name !== 'ssh_lifecycle_overview') return;
+    if (!release) return new Promise(resolve => {
+      release = () => resolve({ isError: true, content: [{ type: 'text', text: 'old overview error' }] });
+    });
+    return { structuredContent: { state, overview: { local: { databaseBytes: 123 }, retentionDays: 30 }, archive: { items: [], nextCursor: null } } };
+  });
+  await h.ids.get('tab-history').click();
+  const storage = h.ids.get('lifecycle-panel');
+  storage.open = true; storage.ontoggle(); await h.settle();
+  await h.ids.get('tab-hosts').click(); await h.ids.get('tab-history').click();
+  assert.equal(storage.open, false);
+  storage.open = true; storage.ontoggle(); await h.settle();
+  release(); await h.settle();
+  assert.match(h.ids.get('storage-summary').textContent, /123 B/);
+  assert.equal(h.ids.get('error-banner').hidden, true);
+});
+
 test('history opens on all configured hosts and filters proposals by time and session without reading stdout', async () => {
   const h=await harness(initial({hosts:[host('prod'),host('offline',{enabled:false})]}),(call,state)=>{
     if(call.name==='ssh_history_list') return {content:[],structuredContent:{state,items:[historyItem(5,{status:'not_approved',sessionId:'session-77'})],nextCursor:null}};
@@ -946,6 +1162,63 @@ test('history opens on all configured hosts and filters proposals by time and se
   await h.ids.get('history-back').click();
   await h.ids.get('history-host-back').click();
   assert.equal(h.ids.get('history-hosts-view').hidden,false);
+});
+
+test('history filter summary and reset reflect a single host query without its old cursor', async () => {
+  const h = await harness(initial(), (call, state) => call.name === 'ssh_history_list'
+    ? { structuredContent: { state, items: [], nextCursor: 41 } } : undefined);
+  await openHostHistory(h);
+  const get = id => h.ids.get(id);
+  assert.equal(get('history-filter-reset').disabled, true);
+  assert.match(get('history-empty').textContent, /暂无执行记录/);
+  get('history-status').value = 'failed';
+  get('history-session').value = 'test-session'; await get('history-session').onchange();
+  assert.match(get('history-filter-summary').textContent, /失败/);
+  assert.match(get('history-empty').textContent, /筛选/);
+  const before = h.calls.length;
+  await get('history-filter-reset').click();
+  assert.equal(h.calls.length, before + 1);
+  assert.deepEqual(h.calls.at(-1).arguments, { hostId: 'prod', uiToken: '__SSH_UI_TOKEN__' });
+  assert.equal(get('history-filter-summary').textContent, '不限');
+});
+
+test('history copies each stored field verbatim and handles clipboard denial without copying placeholders', async () => {
+  const fields = { requestedCommand: "  printf 'a'\n\t# end  \n", command: "/bin/sh -c 'a'\r\n", stdout: '\t开头\r\n\n  <x>  \n\n', stderr: null };
+  const h = await harness(initial(), (call, state) => {
+    if (call.name === 'ssh_history_list') return { structuredContent: { state, items: [historyItem(1)] } };
+    if (call.name === 'ssh_history_get') return { structuredContent: { state, entry: historyDetail(1, fields) } };
+  });
+  await openHostHistory(h); await findData(h.ids.get('history-list'), 'historyId', '1').click();
+  const buttons = [];
+  function walk(el) {
+    if (el.tagName === 'BUTTON' && el.className?.includes('history-copy')) buttons.push(el);
+    for (const child of el.children) walk(child);
+  }
+  walk(h.ids.get('history-detail-content'));
+  assert.equal(buttons.length, 3);
+  const copies = [];
+  h.window.navigator.clipboard = { writeText: async value => { copies.push(value); } };
+  for (const btn of buttons) await btn.click();
+  assert.deepEqual(copies, [fields.requestedCommand, fields.command, fields.stdout]);
+  const stdout = buttons.find(btn => btn.getAttribute('aria-label') === '复制标准输出');
+  h.window.navigator.clipboard.writeText = async () => { throw new Error('blocked'); };
+  h.document.removeEventListener = name => h.documentListeners.delete(name);
+  h.document.execCommand = cmd => {
+    assert.equal(cmd, 'copy');
+    let prevented = false;
+    h.documentListeners.get('copy')({ clipboardData: { setData(type, data) {
+      assert.equal(type, 'text/plain'); copies.push(data);
+    } }, preventDefault() { prevented = true; } });
+    return prevented;
+  };
+  await stdout.click();
+  assert.equal(copies.at(-1), fields.stdout);
+  assert.equal(copies.length, 4);
+  assert.equal(h.documentListeners.has('copy'), false);
+  h.document.execCommand = () => true; // WebView declines to dispatch a copy event.
+  await stdout.click();
+  assert.match(h.ids.get('history-detail-content').textContent, /手动复制/);
+  assert.equal(copies.length, 4);
 });
 
 test('execution history lists and paginates without fetching bodies or executing commands', async () => {
@@ -1086,7 +1359,9 @@ for (const scenario of [
     await openHostHistory(h);
     await findData(h.ids.get('history-list'), 'historyId', '11').click(); await h.settle();
     const detail = h.ids.get('history-detail-content');
-    const diagnostic = detail.children.find(section => section.children?.[0]?.textContent === '诊断输出（stderr）');
+    const diagnostic = detail.children.find(section =>
+      section.children[0]?.children.some(child => child.tagName === 'H3' && child.textContent === '诊断输出（stderr）')
+    );
     assert.ok(diagnostic, 'stderr must not be labeled as an execution error');
     assert.equal(diagnostic.children.find(child => child.tagName === 'PRE').textContent, stderr, 'retain the complete original banner and any real error');
     assert.match(diagnostic.textContent, /SSH 登录提示/);
