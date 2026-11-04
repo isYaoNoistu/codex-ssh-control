@@ -929,6 +929,39 @@ test('policy fields cannot change while a save is in progress and are restored o
 
 
 
+test('each child route groups an icon-only named Back button with its page title and refresh action', async () => {
+  const html = await readFile(new URL('../ui/panel.html', import.meta.url), 'utf8');
+  const headings = [];
+  for (const tag of html.matchAll(/<(\w+)\b[^>]*\bclass="([^"]*)"[^>]*>/g)) {
+    if (!tag[2].split(/\s+/).includes('route-heading')) continue;
+    const rest = html.slice(tag.index + tag[0].length);
+    let depth = 1;
+    for (const boundary of rest.matchAll(new RegExp('<(/?)' + tag[1] + '\\b[^>]*>', 'gi'))) {
+      depth += boundary[1] ? -1 : 1;
+      if (!depth) { headings.push(rest.slice(0, boundary.index)); break; }
+    }
+  }
+  for (const [back, titleId, destination, refresh] of [
+    ['detail-back', 'detail-title', /返回.*主机/],
+    ['history-host-back', 'history-host-title', /返回.*主机/, 'refresh-history'],
+    ['history-back', 'history-record-title', /返回.*记录|返回.*历史/, 'refresh-history-detail'],
+    ['infrastructure-back', 'infrastructure-title', /返回.*列表/, 'infrastructure-refresh'],
+  ]) {
+    const heading = headings.find(block => block.includes('id="' + back + '"'));
+    assert.ok(heading, back + ' belongs to its route heading');
+    assert.match(heading, new RegExp('<h[1-6]\\b[^>]*\\bid="' + titleId + '"'));
+    if (refresh) assert.ok(heading.includes('id="' + refresh + '"'), refresh + ' belongs to the same heading');
+    const button = heading.match(new RegExp('<button\\b[^>]*\\bid="' + back + '"[^>]*>([\\s\\S]*?)</button>'));
+    assert.ok(button, back + ' is a native button');
+    assert.ok(button[0].match(/\bclass="([^"]+)"/)?.[1].split(/\s+/).includes('route-back'), back + ' uses the shared icon control');
+    const label = button[0].match(/\baria-label="([^"]+)"/)?.[1];
+    assert.match(label || '', destination, back + ' has an accessible destination');
+    assert.equal(button[0].match(/\btitle="([^"]+)"/)?.[1], label);
+    assert.doesNotMatch(button[1].replace(/<svg\b[\s\S]*?<\/svg>/gi, ''), /[\p{L}\p{N}]/u, 'The visible Back control is icon-only');
+    if (back === 'history-back') assert.ok(heading.includes('id="history-record-status"'));
+  }
+});
+
 test('edit and permissions share a full host detail view that replaces the host list', async () => {
   const h = await harness(initial(), governanceReply);
   await h.findAction('edit', 'prod').click(); await h.settle();
@@ -1247,6 +1280,9 @@ test('history detail shows purpose before exact commands and output strictly as 
   assert.deepEqual(h.calls.find(call => call.name === 'ssh_history_get').arguments, { historyId: 2, uiToken: '__SSH_UI_TOKEN__' });
   assert.equal(h.ids.get('history-list-view').hidden, true);
   const detail = h.ids.get('history-detail-content').textContent;
+  assert.equal(h.ids.get('history-record-title').textContent, entry.summary);
+  assert.equal(h.ids.get('history-record-status').textContent, '成功');
+  assert.ok(!detail.includes(entry.summary), 'The record title is shown once, in the route heading');
   assert.ok(detail.includes(entry.explanation)); assert.ok(detail.includes(entry.stdout));
   assert.ok(detail.includes(entry.requestedCommand)); assert.ok(detail.includes(entry.command));
   assert.ok(detail.indexOf(entry.explanation) < detail.indexOf(entry.requestedCommand));
@@ -1273,10 +1309,10 @@ test('running history detail refreshes while visible and stops after final compl
     if (call.name === 'ssh_history_get') return { content: [], structuredContent: { state, entry: historyDetail(4, ++reads === 1 ? { status: 'running', finishedAt: null, stdout: '', completionKnown: false } : {}) } };
   });
   await openHostHistory(h); await findData(h.ids.get('history-list'), 'historyId', '4').click(); await h.settle();
-  assert.match(h.ids.get('history-detail-content').textContent, /执行中/);
+  assert.equal(h.ids.get('history-record-status').textContent, '执行中');
   h.document.hidden = true; h.intervals[0](); await h.settle(); assert.equal(reads, 1);
   h.document.hidden = false; h.intervals[0](); await h.settle();
-  assert.equal(reads, 2); assert.match(h.ids.get('history-detail-content').textContent, /成功/);
+  assert.equal(reads, 2); assert.equal(h.ids.get('history-record-status').textContent, '成功');
   h.intervals[0](); await h.settle(); assert.equal(reads, 2);
 });
 
@@ -1285,17 +1321,43 @@ test('a delayed history detail cannot replace a later selection or a different a
   const h = await harness(initial(), (call, state) => {
     if (call.name === 'ssh_history_list') return { content: [], structuredContent: { state, items: [historyItem(1), historyItem(2)], nextCursor: null } };
     if (call.name === 'ssh_history_get') return call.arguments.historyId === 1
-      ? new Promise(resolve => { finishOld = () => resolve({ content: [], structuredContent: { state, entry: historyDetail(1, { explanation: 'old result' }) } }); })
-      : { content: [], structuredContent: { state, entry: historyDetail(2, { explanation: 'new selected result' }) } };
+      ? new Promise(resolve => { finishOld = () => resolve({ content: [], structuredContent: { state, entry: historyDetail(1, { summary: '旧记录', explanation: 'old result', status: 'failed' }) } }); })
+      : { content: [], structuredContent: { state, entry: historyDetail(2, { summary: '新记录', explanation: 'new selected result' }) } };
   });
   await openHostHistory(h);
   const old = findData(h.ids.get('history-list'), 'historyId', '1').click(); await h.settle();
   await h.ids.get('history-back').click(); await findData(h.ids.get('history-list'), 'historyId', '2').click(); await h.settle();
   finishOld(); await old; await h.settle();
+  assert.equal(h.ids.get('history-record-title').textContent, '新记录');
+  assert.equal(h.ids.get('history-record-status').textContent, '成功');
   assert.match(h.ids.get('history-detail-content').textContent, /new selected result/);
   assert.doesNotMatch(h.ids.get('history-detail-content').textContent, /old result/);
 });
 
+test('reopening a record clears the previous title and status during loading and after a failed read', async () => {
+  let failRead;
+  let reads = 0;
+  const h = await harness(initial(), (call, state) => {
+    if (call.name === 'ssh_history_list') return { structuredContent: { state, items: [historyItem(1)] } };
+    if (call.name !== 'ssh_history_get') return;
+    if (++reads === 1) return { structuredContent: { state, entry: historyDetail(1, { summary: '旧详情标题' }) } };
+    return new Promise(resolve => { failRead = () => resolve({ isError: true, content: [{ type: 'text', text: '已移除' }] }); });
+  });
+  await openHostHistory(h);
+  await findData(h.ids.get('history-list'), 'historyId', '1').click();
+  const title = h.ids.get('history-record-title'), status = h.ids.get('history-record-status');
+  assert.equal(title.textContent, '旧详情标题');
+  assert.equal(status.textContent, '成功');
+  await h.ids.get('tab-hosts').click();
+  await openHostHistory(h);
+  const reading = findData(h.ids.get('history-list'), 'historyId', '1').click(); await h.settle();
+  assert.notEqual(title.textContent, '旧详情标题');
+  assert.equal(status.textContent, '');
+  failRead(); await reading;
+  assert.match(h.ids.get('history-detail-content').textContent, /已移除/);
+  assert.notEqual(title.textContent, '旧详情标题');
+  assert.equal(status.textContent, '');
+});
 
 test('native approval error prefixes preserve state classification but display only the human reason', async () => {
   for (const [code, label] of [['APPROVAL_DECLINED', '未获批准'], ['APPROVAL_CANCELLED', '已取消'], ['APPROVAL_TIMEOUT', '确认超时'], ['APPROVAL_UNSUPPORTED', '无法请求确认']]) {

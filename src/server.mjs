@@ -12,7 +12,7 @@ import { normalizeHostOperation } from './host-operation.mjs';
 import { infrastructureDefinitions } from './infrastructure-api.mjs';
 import { createInfrastructureRuntime } from './infrastructure-runtime.mjs';
 
-const VERSION = '0.5.1';
+const VERSION = '0.5.2';
 const URI = 'ui://codex-ssh-control/manager-v1';
 const MIME = 'text/html;profile=mcp-app';
 const uiToken = randomBytes(32).toString('hex');

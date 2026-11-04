@@ -1,6 +1,6 @@
 {
   "name": "codex-ssh-control",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "SSH host control with visual per-chat permissions, immediate native approval and execution history.",
   "author": {
     "name": "codex-ssh-control contributors"

@@ -4,6 +4,10 @@
 
 项目仓库：[isYaoNoistu/codex-ssh-control](https://github.com/isYaoNoistu/codex-ssh-control)。插件 ID 与仓库提供的本地 marketplace 名称均为 `codex-ssh-control`，安装引用为 `codex-ssh-control@codex-ssh-control`。目前通过仓库安装，尚未收录到公共 marketplace。
 
+## 0.5.2 详情页导航
+
+主机设置、执行历史、任务和传输详情页共用一行页头。左侧箭头返回上一级，标题显示当前位置。有刷新操作的页面将「刷新」放在页头右侧。
+
 ## 0.5.1 侧栏导航与复制
 
 点击顶部页签会回到该页首页。历史详情中的返回按钮只退一级，保留当前主机的筛选条件和已加载记录。离开有未保存修改的主机设置时，可以继续编辑或放弃修改。

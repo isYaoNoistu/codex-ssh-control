@@ -78,11 +78,18 @@ h3 { font-size: 13px; font-weight: 600; }
 .tabs button { flex: 1; background: transparent; color: var(--muted); border-color: transparent; padding: 6px 10px; }
 .tabs button[aria-selected="true"] { background: color-mix(in srgb,var(--fg) 7%,var(--bg)); color: var(--fg); font-weight: 600; }
 html { scroll-padding-top: 58px; }
-.route-back { display:inline-flex; align-items:center; gap:7px; min-height:30px; margin:0; padding:4px 8px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--muted); font-size:12px; }
-.route-back::before,.history-destination::after { content:""; display:block; flex:none; width:6px; height:6px; border-top:1.5px solid currentColor; border-right:1.5px solid currentColor; }
-.route-back::before { transform:rotate(-135deg); }
-.route-back:hover:not(:disabled) { color:var(--fg); background:var(--surface); }
-.detail-toolbar .route-back { padding-left:6px; }
+.route-heading { display:grid; grid-template-columns:32px minmax(0,1fr) auto; align-items:center; gap:4px 10px; margin:0 0 14px; }
+.route-heading:has(> .route-back[hidden]) { grid-template-columns:minmax(0,1fr) auto; }
+.route-heading h2 { min-width:0; margin:0; font-size:17px; font-weight:600; letter-spacing:-.2px; line-height:1.4; overflow-wrap:anywhere; }
+.route-heading .small { white-space:nowrap; }
+.route-name { min-width:0; display:flex; align-items:center; gap:8px; }
+#history-record-status { flex:none; }
+.route-back { position:relative; width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:8px; color:var(--fg); background:color-mix(in srgb,var(--fg) 4%,var(--bg)); }
+.route-back::before,.route-back::after { content:""; position:absolute; top:50%; }
+.route-back::before { left:9px; width:7px; height:7px; border-left:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:translateY(-50%) rotate(45deg); }
+.route-back::after { left:9px; width:13px; height:1.5px; background:currentColor; transform:translateY(-50%); }
+.route-back:hover:not(:disabled) { background:color-mix(in srgb,var(--fg) 9%,var(--bg)); }
+.history-destination::after { content:""; display:block; width:6px; height:6px; border-top:1.5px solid currentColor; border-right:1.5px solid currentColor; }
 .grant-block { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 24px; }
 .section-label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .section-label h2 { font-size: 12px; color: var(--muted); font-weight: 400; }
@@ -151,8 +158,6 @@ html { scroll-padding-top: 58px; }
 .shortcut p { margin: 8px 0 0; }
 .shortcut code { font: 11px/1.7 var(--mono); color: var(--fg); overflow-wrap: anywhere; white-space: normal; }
 .sync-note { min-height: 16px; margin-top: 26px; color: var(--muted); font-size: 11px; }
-.detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 18px; }
-.detail-toolbar .quiet { padding-left: 0; }
 .draft-note { font-size: 11px; color: var(--muted); }
 .host-pane { padding: 0; margin: 0; border: 0; }
 .settings-group { padding: 0 0 24px; margin: 0; border: 0; }
@@ -217,8 +222,8 @@ html { scroll-padding-top: 58px; }
 .event-note { font-size: 11px !important; color: var(--muted); }
 .loading-note { color: var(--muted); font-size: 12px; padding: 16px 0; }
 #audit-more, #history-more { margin-top: 16px; }
-#history-kind-bar,.history-list-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 18px; }
-#history-kind-bar h2,.history-list-heading h2 { font-size:17px; }
+#history-kind-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 18px; }
+#history-kind-bar h2 { font-size:17px; }
 #history-kind-bar select { width:auto; max-width:54%; min-height:32px; border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:12px; background:var(--bg); color:var(--fg); }
 #history-view:has(#history-list-view:not([hidden]),#history-detail-view:not([hidden]),#infrastructure-view:not([hidden]) #infrastructure-back:not([hidden])) #history-kind-bar { display:none; }
 .history-purpose { margin: 20px 0; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
@@ -234,7 +239,6 @@ html { scroll-padding-top: 58px; }
 .history-copy { flex: none; min-width: 48px; }
 .history-block .hint { margin: 8px 14px 0; }
 .history-block pre { margin: 0; padding: 12px 14px; font: 12px/1.75 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
-#history-detail-content>.event-top { align-items: center; }
 #history-detail-content .event-title { font-size: 16px; }
 #discard-confirmation p { margin: 0 0 12px; }
 #discard-confirmation .form-actions { border: 0; margin: 0; padding: 0; }
@@ -275,14 +279,11 @@ html { scroll-padding-top: 58px; }
 @media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; scroll-behavior: auto !important; } }
 @media (forced-colors: active) { button, input, select, textarea, .switch { border: 1px solid ButtonText; } .switch[aria-checked="true"] { background: Highlight; } .switch::after { background: ButtonText; } }
 /* Host settings */
-.detail-header { display: flex; align-items: center; gap: 12px; margin: 0 0 17px; }
-.detail-header .host-symbol { width: 38px; height: 38px; font-size: 15px; }
-.detail-identity { min-width: 0; }
-.detail-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.detail-name h2 { font-size: 18px; line-height: 1.35; letter-spacing: -.2px; }
-.detail-name .host-state { margin: 0; }
-.detail-name .host-state-label { padding: 1px 7px; }
-.detail-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 9px; margin-top: 3px; color: var(--muted); font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
+.route-heading > #detail-title { grid-column:2/-1; }
+.route-heading > .host-state { grid-column:2/-1; margin:0; }
+.route-heading .host-state-label { padding:1px 7px; }
+.detail-meta { grid-column:2/-1; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 9px; min-width:0; color:var(--muted); font:11px/1.6 var(--mono); overflow-wrap:anywhere; }
+.detail-meta .draft-note { font-family:var(--font-sans,system-ui,sans-serif); }
 #detail-id { display: inline-flex; align-items: center; gap: 9px; }
 #detail-id::after { content: ""; width: 1px; height: 10px; background: var(--line); }
 .detail-tabs { display: flex; gap: 18px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
@@ -328,8 +329,6 @@ html { scroll-padding-top: 58px; }
 .history-destination>strong { font-size:13px; font-weight:550; color:var(--fg); }
 .history-destination>.hint { font-size:11px; font-weight:400; }
 #lifecycle-panel { margin:18px 0 0; padding:13px 14px; border:1px solid var(--line); border-radius:10px; }
-#history-host-back { margin-bottom:6px; }
-.history-list-heading { margin-bottom:12px; }
 .history-filters { border:1px solid var(--line); border-radius:10px; padding:0 12px; }
 .history-filters summary { display:flex; align-items:center; gap:8px; list-style:none; min-height:40px; font-size:12px; font-weight:550; }
 .history-filters summary::-webkit-details-marker { display:none; }
@@ -367,12 +366,11 @@ html { scroll-padding-top: 58px; }
   <details class="shortcut"><summary>在聊天中使用快捷指令</summary><p class="hint">发送 <code id="shortcut-help">/ssh-主机标识</code>，可一次指定多台。新聊天需要重新授权。</p></details>
   </div>
   <section id="host-detail-view" class="host-detail" hidden aria-labelledby="detail-title">
-    <div class="detail-toolbar"><button id="detail-back" type="button" class="route-back">返回主机列表</button><span id="detail-dirty" class="draft-note" hidden>有未保存修改</span></div>
-    <header class="detail-header">
-      <span class="host-symbol" aria-hidden="true">&gt;_</span>
-      <div class="detail-identity"><div class="detail-name"><h2 id="detail-title">主机设置</h2><div id="detail-status" class="host-state"></div></div>
-        <div class="detail-meta"><span id="detail-id" hidden></span><span id="detail-address"></span></div>
-      </div>
+    <header class="route-heading">
+      <button id="detail-back" type="button" class="route-back" aria-label="返回主机列表" title="返回主机列表"></button>
+      <h2 id="detail-title">主机设置</h2>
+      <div class="detail-meta"><span id="detail-id" hidden></span><span id="detail-address"></span><span id="detail-dirty" class="draft-note" hidden>有未保存修改</span></div>
+      <div id="detail-status" class="host-state"></div>
     </header>
     <div id="discard-confirmation" class="identity-notice" hidden role="alert"><p>连接或权限设置尚未保存。离开将放弃这些修改。</p><div class="form-actions"><button id="keep-editing" type="button">继续编辑</button><button id="discard-detail" type="button" class="danger">放弃并离开</button></div></div>
     <nav class="detail-tabs" role="tablist" aria-label="主机设置"><button id="detail-tab-connection" type="button" role="tab" aria-controls="editor" aria-selected="true">连接设置</button><button id="detail-tab-policy" type="button" role="tab" aria-controls="policy-editor" aria-selected="false">权限设置</button></nav>
@@ -437,7 +435,13 @@ html { scroll-padding-top: 58px; }
   <section id="audit-view" role="tabpanel" aria-labelledby="tab-audit" hidden><div class="section-heading"><h2>权限与操作记录</h2><button id="refresh-audit" type="button" class="small">刷新</button></div><p class="hint">记录授权、规则变更、审批和执行结果。日志不保存文件内容或完整原始命令。</p><div class="filter-grid"><div class="field"><label for="audit-host">主机</label><select id="audit-host"><option value="">全部主机</option></select></div><div class="field"><label for="audit-result">结果</label><select id="audit-result"><option value="">全部结果</option><option value="pending">待审批</option><option value="approved">已批准</option><option value="denied">已拒绝</option><option value="ready">已允许执行</option><option value="expired">已到期</option><option value="invalidated">已失效</option><option value="completed">已完成</option><option value="failed">失败</option><option value="timed_out">超时</option><option value="cancelled">已取消</option></select></div></div><div id="audit-list" class="event-list" aria-live="polite"></div><p id="audit-empty" class="empty" hidden>暂无符合条件的记录。</p><button id="audit-more" type="button" class="small" hidden>加载更早记录</button></section>
   <section id="history-view" role="tabpanel" aria-labelledby="tab-history" hidden>
     <div id="history-kind-bar"><h2>执行历史</h2><label for="execution-kind" class="sr-only">记录类型</label><select id="execution-kind"><option value="history">普通执行记录</option><option value="jobs">可恢复任务</option><option value="transfers">制品传输</option></select></div>
-    <section id="infrastructure-view" hidden><div class="infrastructure-tools"><button id="infrastructure-back" type="button" class="route-back" hidden>运行列表</button><button id="infrastructure-refresh" type="button" class="small">刷新运行状态</button></div><p class="hint">任务和传输在聊天中发起。状态未知不代表失败；核对远端状态不会重放命令。取消和恢复会弹出原生确认。</p><div id="infrastructure-list" class="event-list infrastructure-list" aria-live="polite"></div><button id="infrastructure-more" type="button" class="small" hidden>加载更多运行记录</button><div id="infrastructure-detail" class="result-box" aria-live="polite" hidden></div><div class="infrastructure-tools"><button id="infrastructure-output-more" type="button" class="small" hidden>读取后续输出</button><button id="infrastructure-storage" type="button" class="small" hidden>测量远端私有状态</button><button id="infrastructure-reconcile" type="button" class="small" hidden>核对远端任务状态</button><button id="infrastructure-resume" type="button" class="small" hidden>恢复传输</button><button id="infrastructure-cancel" type="button" class="small danger" hidden>取消运行</button></div><p id="infrastructure-storage-result" class="hint" role="status" hidden></p><p id="infrastructure-grant-note" class="warning-note" hidden>当前授权已失效或主机停用，请重新授权后控制此运行。</p></section>
+    <section id="infrastructure-view" hidden>
+      <header class="route-heading">
+        <button id="infrastructure-back" type="button" class="route-back" aria-label="返回运行列表" title="返回运行列表" hidden></button>
+        <h2 id="infrastructure-title">运行记录</h2>
+        <button id="infrastructure-refresh" type="button" class="small" aria-label="刷新运行状态">刷新</button>
+      </header>
+      <p class="hint">任务和传输在聊天中发起。状态未知不代表失败；核对远端状态不会重放命令。取消和恢复会弹出原生确认。</p><div id="infrastructure-list" class="event-list infrastructure-list" aria-live="polite"></div><button id="infrastructure-more" type="button" class="small" hidden>加载更多运行记录</button><div id="infrastructure-detail" class="result-box" aria-live="polite" hidden></div><div class="infrastructure-tools"><button id="infrastructure-output-more" type="button" class="small" hidden>读取后续输出</button><button id="infrastructure-storage" type="button" class="small" hidden>测量远端私有状态</button><button id="infrastructure-reconcile" type="button" class="small" hidden>核对远端任务状态</button><button id="infrastructure-resume" type="button" class="small" hidden>恢复传输</button><button id="infrastructure-cancel" type="button" class="small danger" hidden>取消运行</button></div><p id="infrastructure-storage-result" class="hint" role="status" hidden></p><p id="infrastructure-grant-note" class="warning-note" hidden>当前授权已失效或主机停用，请重新授权后控制此运行。</p></section>
     <section id="history-hosts-view">
       <h3 class="history-caption">选择主机</h3>
       <div class="history-destinations">
@@ -455,8 +459,11 @@ html { scroll-padding-top: 58px; }
         <div id="archive-list" class="event-list"></div><button id="archive-more" type="button" hidden>加载更多归档</button>
       </details></section>
     <div id="history-list-view" hidden>
-      <button id="history-host-back" type="button" class="route-back">历史主机列表</button>
-      <div class="history-list-heading"><h2 id="history-host-title">执行历史</h2><button id="refresh-history" type="button" class="small">刷新</button></div>
+      <header class="route-heading">
+        <button id="history-host-back" type="button" class="route-back" aria-label="返回历史主机列表" title="返回历史主机列表"></button>
+        <h2 id="history-host-title">执行历史</h2>
+        <button id="refresh-history" type="button" class="small" aria-label="刷新执行历史">刷新</button>
+      </header>
       <details id="history-filters" class="history-filters">
         <summary><span>筛选条件</span><span id="history-filter-summary">不限</span></summary>
         <div class="filter-grid">
@@ -469,7 +476,14 @@ html { scroll-padding-top: 58px; }
       </details>
       <div id="history-list" class="event-list" aria-live="polite"></div><p id="history-empty" class="empty" hidden>暂无执行记录。</p><button id="history-more" type="button" class="small" hidden>加载更早记录</button>
     </div>
-    <div id="history-detail-view" hidden><div class="detail-toolbar"><button id="history-back" type="button" class="route-back">执行记录列表</button><button id="refresh-history-detail" type="button" class="small">刷新详情</button></div><div id="history-detail-content" aria-live="polite"></div></div>
+    <div id="history-detail-view" hidden>
+      <header class="route-heading">
+        <button id="history-back" type="button" class="route-back" aria-label="返回执行记录列表" title="返回执行记录列表"></button>
+        <div class="route-name"><h2 id="history-record-title">执行详情</h2><span id="history-record-status"></span></div>
+        <button id="refresh-history-detail" type="button" class="small" aria-label="刷新记录详情">刷新</button>
+      </header>
+      <div id="history-detail-content" aria-live="polite"></div>
+    </div>
   </section>
   <footer id="sync-note" class="sync-note" aria-live="polite"></footer>
 </main>
@@ -1107,10 +1121,16 @@ html { scroll-padding-top: 58px; }
   }
   function renderHistoryDetail() {
     const target = $('history-detail-content');
-    if (!historyEntry) { renderedHistoryEntry = null; target.replaceChildren(text('p', historyLoadError ? '读取未完成：' + historyLoadError : '正在读取执行详情…', 'loading-note')); return; }
+    if (!historyEntry) {
+      renderedHistoryEntry = null;
+      $('history-record-title').textContent = '执行详情'; $('history-record-status').replaceChildren();
+      target.replaceChildren(text('p', historyLoadError ? '读取未完成：' + historyLoadError : '正在读取执行详情…', 'loading-note')); return;
+    }
     if (renderedHistoryEntry === historyEntry) return;
-    const entry = historyEntry, heading = text('div', '', 'event-top'); heading.append(text('h2', entry.summary || '执行详情', 'event-title'), historyBadge(entry.status));
-    const nodes = [heading];
+    const entry = historyEntry;
+    $('history-record-title').textContent = entry.summary || '执行详情';
+    $('history-record-status').replaceChildren(historyBadge(entry.status));
+    const nodes = [];
     const purpose = text('section', '', 'history-purpose'); purpose.append(text('h3', '执行目的'), text('p', entry.explanation || '未提供执行目的。')); nodes.push(purpose);
     const unapproved=entry.status==='not_approved';
     const host = entry.hostSnapshot || {}, address = host.sshAlias || (host.hostname ? (host.username ? host.username + '@' : '') + host.hostname + ':' + (host.port || 22) : '');
@@ -1405,6 +1425,10 @@ html { scroll-padding-top: 58px; }
     $('execution-kind').value=executionKind;$('execution-kind').disabled=busy;
     $('infrastructure-back').hidden=!showing || !detail;$('infrastructure-back').disabled=busy;
     $('infrastructure-view').hidden=!showing;if(!showing)return;
+    const kindLabel = executionKind === 'jobs' ? '任务' : '传输';
+    $('infrastructure-title').textContent = kindLabel + (detail ? '详情' : '列表');
+    $('infrastructure-back').setAttribute('aria-label', '返回' + kindLabel + '列表');
+    $('infrastructure-back').title = '返回' + kindLabel + '列表';
     $('infrastructure-list').hidden=detail;$('infrastructure-detail').hidden=!detail;
     $('infrastructure-refresh').disabled=!canEdit() || infrastructureLoading;
     $('infrastructure-more').hidden=detail || infrastructureCursor===null;$('infrastructure-more').disabled=!canEdit() || infrastructureLoading;
@@ -1554,7 +1578,7 @@ html { scroll-padding-top: 58px; }
     render();
     try {
       if (window.parent === window) throw new Error('请从 Codex 聊天中打开 SSH 主机面板。');
-      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.5.1' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
+      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.5.2' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
       hostStyle(result.hostContext); notify('ui/notifications/initialized'); connected = true; controls();
       await refresh();
       timer = setInterval(() => { if (!document.hidden) refresh(true); }, 5000);

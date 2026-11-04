@@ -127,11 +127,18 @@ test('jobs display escaped output, use byte cursors and cancel with exact identi
   await h.ids.get('tab-history').click(); await settle();
   h.ids.get('execution-kind').value='jobs'; await h.ids.get('execution-kind').onchange(); await settle();
   await walk(h.ids.get('infrastructure-list'),e=>e.dataset?.taskId==='job-1').click(); await settle();
+  const back = h.ids.get('infrastructure-back');
+  assert.equal(back.getAttribute('aria-label'), '返回任务列表');
+  assert.equal(back.title, '返回任务列表');
+  assert.equal(h.ids.get('infrastructure-title').textContent, '任务详情');
   assert.match(h.ids.get('infrastructure-detail').textContent,/<img src=x>/);
   await h.ids.get('infrastructure-output-more').click(); await settle();
   assert.equal(h.calls.filter(c=>c.name==='ssh_job_read').at(-1).arguments.cursor,10);
   await h.ids.get('infrastructure-cancel').click(); await settle();
   const call=h.calls.find(c=>c.name==='ssh_job_cancel'); assert.equal(call.arguments.taskId,'job-1'); assert.ok(call.arguments.explanation); assert.equal(call.arguments.uiToken,undefined);
+  await back.click();
+  assert.equal(h.ids.get('infrastructure-title').textContent, '任务列表');
+  assert.equal(back.hidden, true);
 });
 
 test('transfer details show progress and resume is disabled after grant expires', async () => {
@@ -139,7 +146,14 @@ test('transfer details show progress and resume is disabled after grant expires'
   const h=await harness(initial(),(call,state)=>call.name==='ssh_transfer_list'?reply(state,{transfers:[transfer]}):call.name==='ssh_transfer_read'?reply(state,{transfer}):undefined);
   await h.ids.get('tab-history').click(); await settle(); h.ids.get('execution-kind').value='transfers'; await h.ids.get('execution-kind').onchange(); await settle();
   await walk(h.ids.get('infrastructure-list'),e=>e.dataset?.transferId==='transfer-1').click(); await settle();
+  const back = h.ids.get('infrastructure-back');
+  assert.equal(back.getAttribute('aria-label'), '返回传输列表');
+  assert.equal(back.title, '返回传输列表');
+  assert.equal(h.ids.get('infrastructure-title').textContent, '传输详情');
   assert.match(h.ids.get('infrastructure-detail').textContent,/5.*10/); assert.equal(h.ids.get('infrastructure-resume').disabled,true);
+  await back.click();
+  assert.equal(h.ids.get('infrastructure-title').textContent, '传输列表');
+  assert.equal(back.hidden, true);
 });
 
 test('unconfirmed pasted keys block save and checked keys use the app-only compare-and-set confirmation', async () => {
