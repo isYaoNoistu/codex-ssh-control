@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { evaluateOperation, defaultPolicy } from '../src/policy.mjs';
-import { normalizeExplanation, operationPresentation, historySnapshot, sanitizeHistoryOutput, createOutputScanner } from '../src/operation-display.mjs';
+import { normalizeExplanation, operationPresentation, historySnapshot, presentationHistorySnapshot, sanitizeHistoryOutput, createOutputScanner } from '../src/operation-display.mjs';
 
 const host = { id: 'dev', name: '开发环境', hostname: 'example.invalid', sshAlias: '', username: 'deploy', port: 22, identityFile: 'C:/keys/private-key', enabled: true };
 const policy = { ...defaultPolicy(), mode: 'approval', roots: [{ id: 'app', path: '/srv/app', read: true, write: true }] };
@@ -75,6 +75,13 @@ test('history output has a combined 32 KiB UTF-8 cap and preserves code points',
   assert.deepEqual(sanitizeHistoryOutput(), { stdout: '', stderr: '', truncated: false, redacted: false, outputNotice: '' });
 });
 
+test('history pairs environment names with values when redacting stored presentations', () => {
+  const presentation = {operation:{kind:'job', env:{DEPLOY_TOKEN:'synthetic-env-value', REGION:'west'}}};
+  const snapshot = presentationHistorySnapshot(presentation, host);
+  assert.equal(snapshot.operationSnapshot.env.REGION, 'west');
+  assert.ok(!JSON.stringify(snapshot).includes('synthetic-env-value'));
+});
+
 test('known secrets anywhere before truncation hide both streams', () => {
   for (const data of [
     { stdout: 'safe', stderr: 'password=fixture' },
@@ -98,6 +105,19 @@ test('scanner catches secrets split across chunks and latches permanently', () =
     for (const char of value) other.push('stderr', char);
     assert.equal(other.sensitive, true, value);
   }
+});
+
+test('password options and recognizable provider tokens hide history output while password documentation stays readable', () => {
+  const options = ['mysql --password=synthetic', 'login --token "synthetic"', 'curl -u user:synthetic',
+    'ghp_' + 'a'.repeat(36), 'sk-proj-' + 'a'.repeat(32), 'glpat-' + 'a'.repeat(20)];
+  for (const value of options) {
+    const result = sanitizeHistoryOutput({stdout:'ordinary output', stderr:value});
+    assert.equal(result.redacted, true, value);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, '');
+  }
+  for (const value of ['Use a password manager', 'docker login --password-stdin', 'mysql --password', 'token: null'])
+    assert.equal(sanitizeHistoryOutput({stdout:value}).redacted, false, value);
 });
 
 test('scanner checks streams independently and scans unlimited total output with bounded tails', () => {

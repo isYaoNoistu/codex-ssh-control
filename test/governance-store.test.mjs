@@ -18,7 +18,7 @@ function fixture(t, createHost = true) {
   const open = () => { const store = new Store(directory); stores.push(store); return store; };
   t.after(() => { for (const s of stores) s.close(); rmSync(directory, { recursive: true, force: true }); });
   const store = open();
-  if (createHost) store.saveHost(sample);
+  if (createHost) { store.saveHost(sample); policy(store, { mode: 'restricted' }); }
   return { directory, store, open };
 }
 
@@ -201,7 +201,7 @@ test('competing processes consume one approved request only once', async t => {
   store.grant('chat', ['prod']);
   const approval = begin(store).approval;
   store.resolveApproval('user', approval.id, 'approve');
-  const code = `import { Store } from ${JSON.stringify(source.href)}; const s = new Store(process.argv[1]); const r = s.beginOperation('chat','prod',${JSON.stringify(restart)}, {decision:'allow'},1); process.stdout.write(JSON.stringify(r)); s.close();`;
+  const code = `import { Store } from ${JSON.stringify(source.href)}; const s = new Store(process.argv[1]); const r = s.beginOperation('chat','prod',${JSON.stringify(restart)}, {decision:'allow'},s.getPolicy('prod').revision); process.stdout.write(JSON.stringify(r)); s.close();`;
   const run = () => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', code, directory], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = ''; child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { err += d; });

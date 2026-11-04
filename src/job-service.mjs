@@ -3,12 +3,14 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { isSensitiveContent } from './policy.mjs';
+import {installLifecycleLocks,takeLease} from './lifecycle-lock.mjs';
 
 const terminal=new Set(['completed','failed','cancelled','timed_out']);
 const statuses=new Set(['submitted','running','missing','unknown',...terminal]);
 const helper=readFileSync(new URL('../remote/task_guard.py',import.meta.url),'utf8');
 const quote=s=>"'"+s.replaceAll("'","'\"'\"'")+"'";
 const command=`/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C.UTF-8 /usr/bin/python3 -I -S -B -c ${quote(helper)}`;
+export {command as jobHelperCommand};
 function requestInput(record,action){
  const input=JSON.stringify({action,id:record.id,token:record.token,...(action==='submit'?{spec:record.operation}:{})});
  if(Buffer.byteLength(input)>131072)throw Error('Serialized task request exceeds 128 KiB');
@@ -40,6 +42,7 @@ export class JobService {
   const stateDir=join(dataDir,'task-state');mkdirSync(stateDir,{recursive:true,mode:0o700});const stat=lstatSync(stateDir);if(stat.isSymbolicLink()||!stat.isDirectory()||(process.platform!=='win32'&&(stat.uid!==process.getuid()||(stat.mode&0o077))))throw Error('Unsafe local task state directory');
   this.db=new DatabaseSync(join(stateDir,'jobs.sqlite'));this.execute=execute;this.authorize=authorize;this.beforeDispatch=beforeDispatch;this.sanitizeOutput=sanitizeOutput;this.onUpdate=onUpdate;
   this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, idem TEXT NOT NULL, identity TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(thread_id,idem))');
+  installLifecycleLocks(this.db);
  }
  close(){if(this.db){this.db.close();this.db=null;}}
  owned(threadId,taskId){const row=this.db.prepare('SELECT record FROM jobs WHERE id=? AND thread_id=?').get(taskId,threadId);if(!row)throw Error('Task does not belong to this chat');return JSON.parse(row.record);}
@@ -47,6 +50,7 @@ export class JobService {
   this.db.exec('BEGIN IMMEDIATE');
   try{
    const latest=this.owned(record.threadId,record.id);
+   if(latest.archivedAt)throw Error('任务已归档');
    record.cancelRequested=record.cancelRequested||latest.cancelRequested;
    record.redacted=record.redacted||latest.redacted;
    if(terminal.has(latest.status)&&!terminal.has(record.status))for(const key of ['status','exitCode','signal','terminationReason','log','truncated'])record[key]=latest[key];
@@ -59,19 +63,21 @@ export class JobService {
    }
    record.truncated=record.truncated||latest.truncated;
    if(record.redacted)record.log='';
-   record.updatedAt=new Date().toISOString();this.db.prepare('UPDATE jobs SET record=? WHERE id=?').run(JSON.stringify(record),record.id);
+   record.updatedAt=new Date().toISOString();
+   if(terminal.has(record.status)&&record.observation==='confirmed')record.finishedAt=latest.finishedAt??record.updatedAt;
+   this.db.prepare('UPDATE jobs SET record=? WHERE id=?').run(JSON.stringify(record),record.id);
    this.db.exec('COMMIT');
   }catch(error){this.db.exec('ROLLBACK');throw error;}
  }
  async permit(stage,record){if(await this.authorize(stage,structuredClone(publicRecord(record)))===false)throw Error('Task authorization refused');}
  async update(record){this.save(record);if(this.onUpdate)await this.onUpdate(publicRecord(record));}
- async submit({threadId,host,operation,idempotencyKey=randomUUID()}){
+ async submit({threadId,sessionId=null,host,operation,idempotencyKey=randomUUID()}){
   if(typeof threadId!=='string'||!threadId||threadId.length>256||!host||typeof host.id!=='string')throw Error('Invalid task ownership');
   if(typeof idempotencyKey!=='string'||!idempotencyKey||idempotencyKey.length>128||/[\x00-\x1f]/.test(idempotencyKey))throw Error('Invalid idempotencyKey');
   const op=normalizeOperation(operation,host),snapshot=JSON.parse(JSON.stringify(host)),identity=hash({threadId,host:snapshot,operation:op});
   const prior=this.db.prepare('SELECT record FROM jobs WHERE thread_id=? AND idem=?').get(threadId,idempotencyKey);
   if(prior){const r=JSON.parse(prior.record);if(r.identity!==identity)throw Error('Task immutable snapshot mismatch');return publicRecord(r);}
-  const record={id:randomUUID().replaceAll('-',''),threadId,hostId:host.id,host:snapshot,operation:op,idempotencyKey,identity,token:randomBytes(32).toString('hex'),status:'submitted',observation:'unknown',exitCode:null,signal:null,terminationReason:null,cancelRequested:false,log:'',redacted:false,truncated:false,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  const record={id:randomUUID().replaceAll('-',''),threadId,sessionId,hostId:host.id,host:snapshot,operation:op,idempotencyKey,identity,token:randomBytes(32).toString('hex'),status:'submitted',observation:'unknown',exitCode:null,signal:null,terminationReason:null,cancelRequested:false,log:'',redacted:false,truncated:false,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   requestInput(record,'submit');
   await this.permit('submit',record);
   // Insert before contacting SSH. A crash from this point is reconciled by read, never resubmitted.
@@ -79,7 +85,8 @@ export class JobService {
   catch(error){const raced=this.db.prepare('SELECT record FROM jobs WHERE thread_id=? AND idem=?').get(threadId,idempotencyKey);if(!raced)throw error;const r=JSON.parse(raced.record);if(r.identity!==identity)throw Error('Task immutable snapshot mismatch');return publicRecord(r);}
   try{const result=this.beforeDispatch(structuredClone(publicRecord(record)));if(result&&typeof result.then==='function')throw Error('beforeDispatch must be synchronous');}
   catch(error){record.status='failed';record.observation='confirmed';record.terminationReason='launch_failed';await this.update(record);throw error;}
-  await this.remote(record,'submit');return publicRecord(record);
+  const release=takeLease(this.db,record.id);
+  try { await this.remote(record,'submit');return publicRecord(record); } finally { release(); }
  }
  async remote(record,action){
   let response;
@@ -107,13 +114,22 @@ export class JobService {
  }
  async read({threadId,taskId,cursor=0,limitBytes=65536,refresh=true}){
   if(!Number.isInteger(cursor)||cursor<0||!Number.isInteger(limitBytes)||limitBytes<1||limitBytes>1048576)throw Error('Invalid output cursor or limit');
-  const r=this.owned(threadId,taskId);if(refresh){await this.permit('read',r);await this.remote(r,'read');}
+  let r=this.owned(threadId,taskId);if(refresh&&!r.archivedAt){
+    const release=takeLease(this.db,taskId);
+    try {r=this.owned(threadId,taskId);if(!r.archivedAt){await this.permit('read',r);await this.remote(r,'read');}} finally {release();}
+  }
   return {...publicRecord(r),...textSlice(r.log,cursor,limitBytes)};
  }
- async reconcile({threadId,taskId}){const r=this.owned(threadId,taskId);await this.permit('reconcile',r);await this.remote(r,'read');return publicRecord(r);}
- async cancel({threadId,taskId}){const r=this.owned(threadId,taskId);await this.permit('cancel',r);r.cancelRequested=true;this.save(r);await this.remote(r,'cancel');return {...publicRecord(r),notice:'Cancellation is a request to terminate the verified process group; completed effects are not rolled back.'};}
+ async reconcile({threadId,taskId}){
+  const release=takeLease(this.db,taskId);
+  try {const r=this.owned(threadId,taskId);if(r.archivedAt)throw Error('任务已归档');await this.permit('reconcile',r);await this.remote(r,'read');return publicRecord(r);} finally {release();}
+ }
+ async cancel({threadId,taskId}){
+  const release=takeLease(this.db,taskId);
+  try {const r=this.owned(threadId,taskId);if(r.archivedAt)throw Error('任务已归档');await this.permit('cancel',r);r.cancelRequested=true;this.save(r);await this.remote(r,'cancel');return {...publicRecord(r),notice:'Cancellation is a request to terminate the verified process group; completed effects are not rolled back.'};} finally {release();}
+ }
  list({threadId,limit=100,cursor=0}){
   if(typeof threadId!=='string'||!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(cursor)||cursor<0)throw Error('Invalid task list pagination');
-  return this.db.prepare('SELECT record FROM jobs WHERE thread_id=? ORDER BY rowid DESC LIMIT ? OFFSET ?').all(threadId,limit,cursor).map(row=>publicRecord(JSON.parse(row.record)));
+  return this.db.prepare("SELECT record FROM jobs WHERE thread_id=? AND json_extract(record,'$.archivedAt') IS NULL ORDER BY rowid DESC LIMIT ? OFFSET ?").all(threadId,limit,cursor).map(row=>publicRecord(JSON.parse(row.record)));
  }
 }

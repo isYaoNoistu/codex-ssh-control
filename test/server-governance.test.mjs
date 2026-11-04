@@ -54,7 +54,11 @@ test('decline, cancel, missing capability and invalid confirmation never execute
   await t.test(response.action+JSON.stringify(response.content??{}),async t=>{
    const h=await setup(t);await h.grants();h.setElicitation(m=>h.answer(m.id,response));
    assert.equal((await h.call('ssh_run_action',args)).isError,true);assert.equal(await h.count(),0);
-   assert.equal((await h.admin('ssh_history_list')).structuredContent.items.length,0);
+   const query={hostId:'fixture',threadId:'owner',sessionId:'shared-session',status:'not_approved',fromMs:0,toMs:Date.now()+1};
+   assert.equal((await h.call('ssh_history_list',query)).isError,true);
+   const rows=(await h.admin('ssh_history_list',query)).structuredContent.items;
+   assert.equal(rows.length,1);assert.equal(rows[0].sessionId,'shared-session');
+   assert.equal(rows[0].approvalOutcome,response.action==='cancel'?'cancelled':'declined');
    const db=new DatabaseSync(path.join(h.dir,'store.sqlite'));
    try{assert.equal(db.prepare("SELECT COUNT(*) n FROM approvals WHERE status IN ('pending','approved')").get().n,0);}finally{db.close();}
   });
@@ -170,7 +174,7 @@ test('server shutdown cancels outstanding native approvals before closing the st
  const db=new DatabaseSync(path.join(h.dir,'store.sqlite'));
  try{
   assert.equal(db.prepare("SELECT COUNT(*) n FROM approvals WHERE source='native' AND status IN ('pending','approved')").get().n,0);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM execution_history').get().n,0);
+  assert.deepEqual(db.prepare('SELECT approval_outcome FROM execution_history').all().map(row=>row.approval_outcome),['cancelled']);
  }finally{db.close();}
 });
 

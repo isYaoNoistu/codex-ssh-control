@@ -1,13 +1,17 @@
 import * as fs from 'node:fs/promises';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import {confirmedTransfer,verifiedStorage} from './terminal-evidence.mjs';
+import {deflateSync} from 'node:zlib';
 import path from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
+import {installLifecycleLocks,occupants} from './lifecycle-lock.mjs';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { inspectLocalFile, validateLocalPath, openLocalSource, hashHandle, createLocalPartial, inspectLocalPartial, commitLocalPartial, cleanupLocalPartial, localManifest, sameSnapshot, recoverLocalPublication, createLocalDirectory, localFileCapabilities } from './local-files.mjs';
 
-const HELPER=readFileSync(new URL('../remote/transfer_guard.py',import.meta.url)).toString('base64');
+// Leave room in Windows' single command-line limit for the two approved paths.
+const HELPER=deflateSync(readFileSync(new URL('../remote/transfer_guard.py',import.meta.url))).toString('base64');
 const EMPTY=createHash('sha256').digest('hex');
 const ID=/^[a-f0-9]{32}$/;
 const MAX_BYTES=16*1024**3;
@@ -18,7 +22,7 @@ function alive(pid){if(!Number.isInteger(pid)||pid<1)return false;try{process.ki
 export function buildTransferCommand(request){
  const data=Buffer.from(JSON.stringify(request)).toString('base64');
  // Source is trusted installed code; request is data only, never interpolated Python.
- return `/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C.UTF-8 /usr/bin/python3 -I -S -B -c 'import base64,json,sys;exec(base64.b64decode("${HELPER}"));sys.exit(main(json.loads(base64.b64decode("${data}"))))'`;
+ return `/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C.UTF-8 /usr/bin/python3 -I -S -B -c 'import base64,json,sys,zlib;exec(zlib.decompress(base64.b64decode("${HELPER}")));sys.exit(main(json.loads(base64.b64decode("${data}"))))'`;
 }
 function requireLocalTransferSupport(){if(!localFileCapabilities.supported)throw new Error('local binary transfer unsupported on this platform');}
 function validateRequest(r,now){
@@ -42,10 +46,12 @@ export class TransferService {
   if(!dataDir||typeof spawnRemote!=='function'||typeof authorize!=='function'||typeof validateLease!=='function'||typeof beforeDispatch!=='function')throw new Error('transfer dependencies required');
   this.directory=path.join(dataDir,'transfers');this.spawnRemote=spawnRemote;this.authorize=authorize;this.validateLease=validateLease;this.beforeDispatch=beforeDispatch;this.clock=clock;this.running=new Map();this.children=new Map();this.starting=new Set();
   mkdirSync(this.directory,{recursive:true,mode:0o700});this.db=new DatabaseSync(path.join(this.directory,'transfers.sqlite'));this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS transfers (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, record TEXT NOT NULL, owner_pid INTEGER, owner_token TEXT, stop_requested INTEGER NOT NULL DEFAULT 0)');
+  installLifecycleLocks(this.db);
  }
  async _save(r){
   r.updatedAt=this.clock();r.cursor=(r.cursor??0)+1;this.db.exec('BEGIN IMMEDIATE');try{
    const old=this.db.prepare('SELECT * FROM transfers WHERE id=?').get(r.transferId);
+   if(old&&JSON.parse(old.record).archivedAt)throw new Error('传输已归档');
    if(old?.owner_token&&!r.leaseToken)throw new Error('transfer is owned by a running process');
    if(old&&r.leaseToken&&old.owner_token!==r.leaseToken)throw new Error('transfer ownership lost');
    if(old?.stop_requested&&r.leaseToken)r.status=JSON.parse(old.record).status;
@@ -56,8 +62,13 @@ export class TransferService {
   }catch(e){this.db.exec('ROLLBACK');throw e;}
  }
  async _load(threadId,id){if(!ID.test(id??''))throw new Error('invalid transfer identifier');const row=this.db.prepare('SELECT record FROM transfers WHERE id=? AND thread_id=?').get(id,threadId);if(!row)throw new Error('transfer not found');return JSON.parse(row.record);}
- async _claim(threadId,id){await this._load(threadId,id);this.db.exec('BEGIN IMMEDIATE');try{const row=this.db.prepare('SELECT * FROM transfers WHERE id=? AND thread_id=?').get(id,threadId);if(row.owner_token&&alive(row.owner_pid))throw new Error('transfer is owned by a running process');const token=randomBytes(32).toString('hex');this.db.prepare('UPDATE transfers SET owner_pid=?,owner_token=?,stop_requested=0 WHERE id=?').run(process.pid,token,id);this.db.exec('COMMIT');return {...JSON.parse(row.record),leaseToken:token};}catch(e){this.db.exec('ROLLBACK');throw e;}}
- _release(r){if(r?.leaseToken)this.db.prepare('UPDATE transfers SET owner_pid=NULL,owner_token=NULL WHERE id=? AND owner_token=?').run(r.transferId,r.leaseToken);}
+ async _claim(threadId,id){await this._load(threadId,id);this.db.exec('BEGIN IMMEDIATE');try{const row=this.db.prepare('SELECT * FROM transfers WHERE id=? AND thread_id=?').get(id,threadId);if(!row||JSON.parse(row.record).archivedAt||occupants(this.db,id).some(user=>user.exclusive))throw new Error('传输正在回收或已归档');if(row.owner_token&&alive(row.owner_pid))throw new Error('transfer is owned by a running process');const token=randomBytes(32).toString('hex');this.db.prepare('UPDATE transfers SET owner_pid=?,owner_token=?,stop_requested=0 WHERE id=?').run(process.pid,token,id);this.db.exec('COMMIT');return {...JSON.parse(row.record),leaseToken:token};}catch(e){this.db.exec('ROLLBACK');throw e;}}
+ _release(r,settledWorker=false){
+  if(r?.leaseToken)this.db.prepare(`UPDATE transfers SET owner_pid=NULL,owner_token=NULL,
+    record=CASE WHEN ?=1 AND json_extract(record,'$.status')='cancelled' AND coalesce(json_extract(record,'$.unresolvedCommit'),0)=0
+      THEN json_set(record,'$.cancelConfirmed',json('true')) ELSE record END
+    WHERE id=? AND owner_token=?`).run(Number(settledWorker),r.transferId,r.leaseToken);
+ }
  _owned(r){if(!r.leaseToken)return;const row=this.db.prepare('SELECT owner_token,stop_requested FROM transfers WHERE id=?').get(r.transferId);if(row?.owner_token!==r.leaseToken)throw new Error('transfer ownership lost');if(row.stop_requested)throw new Error('transfer cancelled');}
  async _auth(stage,r){if(await this.authorize(stage,publicRecord(r))===false)throw new Error('transfer authorization denied');}
  _fresh(r){this._owned(r);if(r.status==='cancelled')throw new Error('transfer cancelled');if(r.expiresAt<=this.clock())throw new Error('transfer expired');const result=this.validateLease(publicRecord(r));if(result===false)throw new Error('transfer authorization revoked');if(result&&typeof result.then==='function')throw new Error('validateLease must be synchronous');}
@@ -82,7 +93,9 @@ export class TransferService {
   validateRequest(request,this.clock());
   const r={...clone(request),transferId:randomBytes(16).toString('hex'),remoteToken:randomBytes(32).toString('hex'),status:'preparing',createdAt:this.clock(),cursor:0,bytesTransferred:0,blockedPaths:clone(request.blockedPaths??[])};
   // Do not accept caller-supplied internal state, identity or frozen hashes.
-  for(const k of ['partial','sourceSnapshot','targetSnapshot','sha256','size','approvalPayload','error','finishedAt'])delete r[k];
+  for(const k of ['partial','sourceSnapshot','targetSnapshot','sha256','size','approvalPayload','error','finishedAt',
+   'archivedAt','purgedAt','remoteCleanedAt','privateCleanupVerifiedAt','privateRetainedBytes','cleanedAt',
+   'cancelConfirmed','cancelledBeforeDispatch','unresolvedCommit','leaseToken','sessionId','id','hostId'])delete r[k];
   await this._auth('inspect',r);this._fresh(r);
   if(r.direction==='upload'){
    r.sourceSnapshot=await inspectLocalFile(r.localPath,r.localRoot,{blockedPaths:r.localBlockedPaths??[]});
@@ -97,22 +110,22 @@ export class TransferService {
   this._fresh(r);r.status='prepared';r.approvalPayload={kind:'transfer',direction:r.direction,hostId:r.host.id,localPath:r.localPath,localRoot:r.localRoot,remotePath:r.remotePath,remoteRoot:r.remoteRoot,blockedPaths:r.blockedPaths,localBlockedPaths:r.localBlockedPaths??[],sourceSnapshot:r.sourceSnapshot,targetSnapshot:r.targetSnapshot,size:r.size,sha256:r.sha256,overwrite:r.overwrite,expiresAt:r.expiresAt,maxBytes:r.maxBytes??MAX_BYTES};
   await this._save(r);return {...publicRecord(r),planId:r.transferId};
  }
- async start({threadId,planId}){
+ async start({threadId,sessionId=null,planId}){
   requireLocalTransferSupport();
   if(this.starting.has(planId))throw new Error('transfer already starting');this.starting.add(planId);
-  let r,launched=false;try{r=await this._claim(threadId,planId);if(r.status!=='prepared')throw new Error('transfer plan already started');this._fresh(r);await this._auth('start',r);this._fresh(r);await this._verifySource(r);this._fresh(r);r.status='queued';await this._save(r);
+  let r,launched=false;try{r=await this._claim(threadId,planId);if(r.status!=='prepared')throw new Error('transfer plan already started');this._fresh(r);await this._auth('start',r);this._fresh(r);await this._verifySource(r);this._fresh(r);r.status='queued';r.sessionId=sessionId;await this._save(r);
    // Bind a durable execution slot only after all preflight checks succeeded.
    // This synchronous handoff and launch must not yield to another controller.
    const result=this.beforeDispatch(publicRecord(r));if(result&&typeof result.then==='function')throw new Error('beforeDispatch must be synchronous');
    this._launch(r);launched=true;return publicRecord(r);
-  }catch(error){if(r?.status==='queued'&&!launched){r.status='prepared';await this._save(r);}throw error;}
+  }catch(error){if(r?.status==='queued'&&!launched){r.status='prepared';r.sessionId=null;await this._save(r);}throw error;}
   finally{if(!launched)this._release(r);this.starting.delete(planId);}
  }
  async _verifySource(r){
   const current=r.direction==='upload'?await inspectLocalFile(r.localPath,r.localRoot,{blockedPaths:r.localBlockedPaths??[]}):(await this._metadata(r,'inspect')).snapshot;
   if(!sameSnapshot(current,r.sourceSnapshot))throw new Error('source changed since approval');
  }
- _launch(r){const promise=this._run(r).catch(async error=>{if(r.status!=='cancelled'){r.status=r.status==='committing'||r.status==='commit_unknown'?'commit_unknown':'interrupted';r.error=String(error.message).slice(0,1024);}await this._save(r);}).finally(()=>{this._release(r);this.running.delete(r.transferId);});this.running.set(r.transferId,{record:r,promise});promise.catch(()=>{});}
+ _launch(r){const promise=this._run(r).catch(async error=>{if(r.status!=='cancelled'){r.status=r.unresolvedCommit||r.status==='committing'||r.status==='commit_unknown'?'commit_unknown':'interrupted';r.error=String(error.message).slice(0,1024);}await this._save(r);}).finally(()=>{this._release(r,true);this.running.delete(r.transferId);});this.running.set(r.transferId,{record:r,promise});promise.catch(()=>{});}
  async _run(r){
   r.status='streaming';r.error=null;await this._save(r);this._fresh(r);
   if(r.direction==='upload'){
@@ -148,23 +161,40 @@ export class TransferService {
   requireLocalTransferSupport();
   if(this.starting.has(transferId))throw new Error('transfer already starting');this.starting.add(transferId);
   let r,launched=false;try{r=await this._claim(threadId,transferId);if(this.running.has(transferId)||TERMINAL.has(r.status)||r.status==='prepared')throw new Error('transfer cannot resume in current state');
+  if(['commit_unknown','committing'].includes(r.status))r.unresolvedCommit=true;
   if(expiresAt!==undefined){if(!Number.isFinite(expiresAt)||expiresAt<=this.clock())throw new Error('transfer expired');r.previousExpiresAt=r.expiresAt;r.expiresAt=expiresAt;r.approvalPayload={...r.approvalPayload,expiresAt};}
   // Resolve an already-published inode/receipt before consulting the source.
   // _run validates the frozen source again before copying any remaining bytes.
   this._fresh(r);await this._auth('resume',r);this._fresh(r);r.status='queued';await this._save(r);this._launch(r);launched=true;return publicRecord(r);}finally{if(!launched)this._release(r);this.starting.delete(transferId);}
  }
  async read({threadId,transferId,cursor=0}){if(!Number.isSafeInteger(cursor)||cursor<0)throw new Error('invalid progress cursor');const r=await this._load(threadId,transferId),live=this.running.get(transferId)?.record;const value=publicRecord(r);if(live){value.bytesTransferred=live.bytesTransferred;value.cursor=Math.max(value.cursor,live.cursor);}const owner=this.db.prepare('SELECT owner_pid,owner_token FROM transfers WHERE id=?').get(transferId);if(!owner.owner_token||!alive(owner.owner_pid)){if(['queued','streaming','verifying'].includes(value.status))value.status='interrupted';if(value.status==='committing')value.status='commit_unknown';}return {...value,changed:value.cursor>cursor};}
- async list({threadId,cursor=0,limit=50}){if(!Number.isSafeInteger(cursor)||cursor<0||!Number.isInteger(limit)||limit<1||limit>100)throw new Error('invalid list cursor/limit');const rows=this.db.prepare('SELECT id FROM transfers WHERE thread_id=? ORDER BY id LIMIT ? OFFSET ?').all(threadId,limit+1,cursor);const transfers=[];for(const row of rows.slice(0,limit))transfers.push(await this.read({threadId,transferId:row.id}));return {transfers,cursor:cursor+transfers.length,hasMore:rows.length>limit};}
+ async list({threadId,cursor=0,limit=50}){if(!Number.isSafeInteger(cursor)||cursor<0||!Number.isInteger(limit)||limit<1||limit>100)throw new Error('invalid list cursor/limit');const rows=this.db.prepare("SELECT id FROM transfers WHERE thread_id=? AND json_extract(record,'$.archivedAt') IS NULL ORDER BY id LIMIT ? OFFSET ?").all(threadId,limit+1,cursor);const transfers=[];for(const row of rows.slice(0,limit))transfers.push(await this.read({threadId,transferId:row.id}));return {transfers,cursor:cursor+transfers.length,hasMore:rows.length>limit};}
  async cancel({threadId,transferId}){
   const persisted=await this._load(threadId,transferId);const r=this.running.get(transferId)?.record??persisted;if(TERMINAL.has(r.status))return publicRecord(r);
   // Cancel is always available to the owning chat, including after grant expiry.
-  this.db.exec('BEGIN IMMEDIATE');try{const row=this.db.prepare('SELECT record FROM transfers WHERE id=? AND thread_id=?').get(transferId,threadId);const latest=JSON.parse(row.record);if(TERMINAL.has(latest.status)){this.db.exec('COMMIT');return publicRecord(latest);}latest.status=['committing','commit_unknown'].includes(latest.status)?'commit_unknown':'cancelled';latest.finishedAt=this.clock();latest.cursor++;this.db.prepare('UPDATE transfers SET record=?,stop_requested=1 WHERE id=?').run(JSON.stringify(latest),transferId);this.db.exec('COMMIT');Object.assign(r,latest);}catch(e){this.db.exec('ROLLBACK');throw e;}this.children.get(transferId)?.kill();return publicRecord(r);
+  this.db.exec('BEGIN IMMEDIATE');try{const row=this.db.prepare('SELECT record FROM transfers WHERE id=? AND thread_id=?').get(transferId,threadId);const latest=JSON.parse(row.record);if(occupants(this.db,transferId).some(user=>user.exclusive))throw new Error('传输记录正在回收');if(TERMINAL.has(latest.status)){this.db.exec('COMMIT');return publicRecord(latest);}latest.cancelledBeforeDispatch=latest.status==='prepared';latest.status=(latest.unresolvedCommit||['committing','commit_unknown'].includes(latest.status))?'commit_unknown':'cancelled';latest.finishedAt=this.clock();latest.cursor++;this.db.prepare('UPDATE transfers SET record=?,stop_requested=1 WHERE id=?').run(JSON.stringify(latest),transferId);this.db.exec('COMMIT');Object.assign(r,latest);}catch(e){this.db.exec('ROLLBACK');throw e;}this.children.get(transferId)?.kill();return publicRecord(r);
  }
- async cleanup({threadId,transferId}){
-  const r=await this._claim(threadId,transferId);try{if(this.running.has(transferId)||!['cancelled','completed'].includes(r.status))throw new Error('only stopped cancelled/completed transfer can clean partials');
+ async cleanup({threadId,transferId},checkAccess){
+  if(typeof checkAccess!=='function')throw new Error('清理需要检查当前目录授权');
+  const r=await this._claim(threadId,transferId);try{
+  if(this.running.has(transferId)||!confirmedTransfer(r))throw new Error('only confirmed cancelled/completed transfers can clean partials');
   await this._auth('cleanup',r);
-  if(r.direction==='download'&&r.partial){await cleanupLocalPartial(r.partial,r.localPath,r.localRoot);r.partial=null;}
-  else if(r.direction==='upload'){const lease={...r,status:'cleanup',expiresAt:this.clock()+30000};await this._metadata(lease,'cleanup');}
+  const validate=()=>{
+    this._owned(r);
+    const checked=checkAccess(r);
+    if(!checked||checked.then||checked.transferId!==r.transferId)throw new Error('缺少有效的传输目录授权');
+    return checked;
+  };
+  const checked=validate();
+  if(r.privateCleanupVerifiedAt)return publicRecord(r);
+  if(r.direction==='download'&&r.partial){
+    if(r.partial.token!==r.remoteToken)throw new Error('临时文件与传输所有权不符');
+    await cleanupLocalPartial(r.partial,r.localPath,r.localRoot,validate);r.partial=null;
+  }else if(r.direction==='upload'){
+    const lease={...checked,status:'cleanup',expiresAt:this.clock()+30000};
+    const receipt=verifiedStorage(await this._metadata(lease,'cleanup',{expectedStatus:r.status,originalExpiresAt:r.expiresAt}),true);
+    r.privateCleanupVerifiedAt=this.clock();r.privateRetainedBytes=receipt.retainedBytes;
+  }
   r.cleanedAt=this.clock();await this._save(r);return publicRecord(r);}finally{this._release(r);}
  }
  close(){if(this.running.size)throw new Error('cannot close transfer service with active transfers');this.db.close();}

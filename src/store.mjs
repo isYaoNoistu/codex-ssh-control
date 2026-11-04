@@ -5,13 +5,17 @@ import { join } from 'node:path';
 import { isIP } from 'node:net';
 import { randomUUID, createHash } from 'node:crypto';
 import { DEFAULT_POLICY, validatePolicy, normalizeOperation, evaluateOperation } from './policy.mjs';
-import { operationPresentation, historySnapshot, sanitizeHistoryOutput } from './operation-display.mjs';
+import { operationPresentation, presentationHistorySnapshot, sanitizeHistoryOutput } from './operation-display.mjs';
 import { normalizeHostOperation } from './host-operation.mjs';
 import { normalizeConnection } from './transport.mjs';
 
 const fields = ['id', 'name', 'hostname', 'port', 'username', 'identityFile', 'sshAlias', 'defaultCwd', 'enabled', 'connection'];
 const connectionFields = ['hostname', 'port', 'username', 'identityFile', 'sshAlias', 'defaultCwd', 'connection'];
 const countsConcurrency=operation=>!['job_control','transfer_control'].includes(operation.kind);
+const unapprovedReasons = { declined: '用户未批准', cancelled: '确认已取消', invalidated: '确认已失效',
+  expired: '确认已过期', unsupported: '客户端不支持确认' };
+const unapprovedDecisions = { deny: ['declined','APPROVAL_DENIED'], cancel: ['cancelled','APPROVAL_CANCELLED'],
+  timeout: ['expired','APPROVAL_TIMEOUT'], unsupported: ['unsupported','APPROVAL_UNSUPPORTED'] };
 
 function text(value, label, max = 4096) {
   if (typeof value !== 'string' || value.length > max || /[\0\r\n]/u.test(value)) {
@@ -128,7 +132,7 @@ export class Store {
 
   #migrate() {
     const version = this.#db.prepare('PRAGMA user_version').get().user_version;
-    if (version > 5) throw new Error('数据版本高于当前插件支持范围，请使用更新版本');
+    if (version > 6) throw new Error('数据版本高于当前插件支持范围，请使用更新版本');
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, value TEXT NOT NULL, revision TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS grants (
@@ -199,10 +203,15 @@ export class Store {
       if(!operationColumns.has(name))this.#db.exec(`ALTER TABLE operations ADD COLUMN ${name} ${type}`);
     }
     this.#db.exec('CREATE INDEX IF NOT EXISTS operations_external ON operations(external_kind,external_id)');
-    for (const [name, type] of Object.entries({ source: "TEXT NOT NULL DEFAULT 'legacy'", prompt_token_hash: 'TEXT', explanation: 'TEXT', presentation: 'TEXT', host_snapshot: 'TEXT', policy_snapshot: 'TEXT' })) {
+    for (const [name, type] of Object.entries({ source: "TEXT NOT NULL DEFAULT 'legacy'", prompt_token_hash: 'TEXT', explanation: 'TEXT', presentation: 'TEXT', host_snapshot: 'TEXT', policy_snapshot: 'TEXT', session_id: 'TEXT' })) {
       if (!approvalColumns.has(name)) this.#db.exec(`ALTER TABLE approvals ADD COLUMN ${name} ${type}`);
     }
     this.#db.exec('CREATE UNIQUE INDEX IF NOT EXISTS native_prompt_nonce ON approvals(prompt_token_hash) WHERE prompt_token_hash IS NOT NULL');
+    const historyColumns = new Set(this.#db.prepare('PRAGMA table_info(execution_history)').all().map(row => row.name));
+    for (const column of ['session_id', 'approval_outcome']) {
+      if (!historyColumns.has(column)) this.#db.exec(`ALTER TABLE execution_history ADD COLUMN ${column} TEXT`);
+    }
+    this.#db.exec('CREATE INDEX IF NOT EXISTS history_host_time ON execution_history(host_id,started_at,id)');
     const initialPolicy = JSON.stringify(validatePolicy(DEFAULT_POLICY));
     this.#db.prepare('INSERT OR IGNORE INTO policies(host_id,revision,value) SELECT id,1,? FROM hosts').run(initialPolicy);
     const legacy = this.#db.prepare(`SELECT g.thread_id,g.host_id,h.revision,p.revision AS policy_revision
@@ -219,7 +228,7 @@ export class Store {
     this.#scrubNative();
     if (version < 4) this.#audit({ event: 'intent_revocations_migrated', summary: '快捷授权撤销隔离迁移', result: 'completed', reason: '升级前未消费的快捷授权请求已失效；保留现有主机、策略和有效授权' });
     if(version<5)this.#audit({event:'infrastructure_migrated',summary:'任务与传输权限迁移',result:'completed',reason:'保留现有配置；后台任务和制品传输默认关闭'});
-    this.#db.exec('PRAGMA user_version = 5');
+    this.#db.exec('PRAGMA user_version = 6');
   }
 
   close() {
@@ -265,12 +274,30 @@ export class Store {
     this.#db.prepare(`UPDATE operations SET authorization_invalidated=1 WHERE ${suffix} AND status='active'`).run(...args);
   }
 
-  #scrubNative(approvalId = null) {
-    // Pending prompts need their exact input; terminal tickets only retain replay-denial metadata.
+  #scrubNative(approvalId = null, explicitOutcome = null) {
+    // Preserve a sanitized proposal in the same transaction that invalidates the ticket.
     const suffix = approvalId === null ? '' : ' AND id=?';
+    const params = approvalId === null ? [] : [approvalId];
+    const unapproved = this.#db.prepare(`SELECT * FROM approvals WHERE source='native'
+      AND status IN ('denied','invalidated','expired') AND presentation IS NOT NULL AND presentation!='{}'${suffix}`).all(...params);
+    for (const row of unapproved) {
+      const outcome = explicitOutcome ?? (row.status === 'denied' ? 'declined' : row.status);
+      const reason = unapprovedReasons[outcome];
+      // Older tickets were validated by earlier credential rules. Scrub their saved
+      // presentation without revalidating a proposal that cannot execute.
+      const snapshot = presentationHistorySnapshot(JSON.parse(row.presentation), JSON.parse(row.host_snapshot));
+      // Existing databases constrain status to execution states. The explicit
+      // approval outcome separates an unexecuted proposal from cancelled execution.
+      this.#db.prepare(`INSERT INTO execution_history
+        (operation_id,thread_id,session_id,host_id,policy_revision,snapshot,summary,explanation,status,approval_outcome,started_at,finished_at,completion_known,output_notice)
+        VALUES(?,?,?,?,?,?,?,?,'cancelled',?,?,?,1,?)`)
+        .run('approval:' + row.id, row.thread_id, row.session_id, row.host_id, row.policy_revision, JSON.stringify(snapshot),
+          snapshot.summary, snapshot.explanation, outcome, row.created_at, Date.now(), reason + '，本次操作未执行。');
+    }
     this.#db.prepare(`UPDATE approvals SET operation='{}',presentation='{}',explanation=''
       WHERE source='native' AND status!='pending' AND (operation!='{}' OR presentation!='{}' OR explanation!='')${suffix}`)
-      .run(...(approvalId === null ? [] : [approvalId]));
+      .run(...params);
+    if (unapproved.length) this.#pruneHistory();
   }
 
   #expire(now) {
@@ -292,7 +319,7 @@ export class Store {
   }
 
   #pruneHistory(now = Date.now()) {
-    const ended="status!='running' AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.id=execution_history.operation_id AND o.status='active')";
+    const ended="status NOT IN ('running','unknown') AND NOT EXISTS (SELECT 1 FROM operations o WHERE o.id=execution_history.operation_id AND o.status='active')";
     this.#db.prepare(`DELETE FROM execution_history WHERE ${ended} AND finished_at<=?`).run(now - 30 * 24 * 60 * 60_000);
     this.#db.exec(`DELETE FROM execution_history WHERE ${ended} AND id IN (SELECT id FROM execution_history WHERE ${ended} ORDER BY id DESC LIMIT -1 OFFSET 500)`);
   }
@@ -303,11 +330,21 @@ export class Store {
     return this.#transaction(() => {
       const previous = this.#host(hostId(input?.id));
       const host = validateHost(input, previous);
-      const changed = !previous || connectionFields.some(key => JSON.stringify(canonical(previous[key])) !== JSON.stringify(canonical(host[key]))) || previous.enabled !== host.enabled;
+      const connectionChanged = previous && connectionFields.some(key => JSON.stringify(canonical(previous[key])) !== JSON.stringify(canonical(host[key])));
+      const changed = !previous || connectionChanged || previous.enabled !== host.enabled;
       const revision = changed ? randomUUID() : this.#row(host.id).revision;
       this.#db.prepare('INSERT INTO hosts(id,value,revision) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value,revision=excluded.revision')
         .run(host.id, JSON.stringify(host), revision);
-      this.#db.prepare('INSERT OR IGNORE INTO policies(host_id,revision,value) VALUES(?,1,?)').run(host.id, JSON.stringify(validatePolicy(DEFAULT_POLICY)));
+      this.#db.prepare('INSERT OR IGNORE INTO policies(host_id,revision,value) VALUES(?,1,?)').run(host.id, JSON.stringify(validatePolicy({ ...DEFAULT_POLICY, mode: 'readonly' })));
+      if (connectionChanged) {
+        const record = this.#policy(host.id);
+        if (record.policy.mode === 'god') {
+          this.#db.prepare('UPDATE policies SET revision=?,value=? WHERE host_id=?')
+            .run(record.revision + 1, JSON.stringify({ ...record.policy, mode: 'readonly' }), host.id);
+          this.#audit({ hostId: host.id, event: 'god_target_changed', summary: '连接信息已变更，切换为只读模式',
+            result: 'saved', reason: '新的连接目标必须单独确认完全控制权限', policyRevision: record.revision + 1 });
+        }
+      }
       if (previous && changed) this.#invalidate(host.id);
       this.#audit({ hostId: host.id, event: 'host_saved', summary: '保存主机配置', result: 'completed', reason: previous && changed ? '连接或启用状态变更；已撤销授权和未完成审批' : '配置已保存' });
       return host;
@@ -344,12 +381,29 @@ export class Store {
     return this.#transaction(() => this.#policy(id), false);
   }
 
-  savePolicy(actorThreadId, id, value, expectedRevision) {
+  previewGodActivation(id, expectedRevision, acknowledgement) {
+    hostId(id);
+    return this.#transaction(() => {
+      const host = this.#row(id), current = this.#policy(id);
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== current.revision) throw new Error('权限策略版本冲突，请刷新后重试');
+      if (acknowledgement?.hostId !== id || acknowledgement?.expectedRevision !== expectedRevision || acknowledgement?.confirmed !== true)
+        throw new Error('开启完全控制模式需要在主机权限页明确核对此主机和策略版本。');
+      return { host: JSON.parse(host.value), hostRevision: host.revision, policyRevision: current.revision };
+    }, false);
+  }
+
+  savePolicy(actorThreadId, id, value, expectedRevision, confirmedGodSnapshot = null) {
     identity(actorThreadId, '聊天标识'); hostId(id);
     return this.#transaction(() => {
       const current = this.#policy(id);
       if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== current.revision) throw new Error('权限策略版本冲突，请刷新后重新保存');
       const policy = validatePolicy(value);
+      if (policy.mode === 'god' && current.policy.mode !== 'god') {
+        if (confirmedGodSnapshot?.host?.id !== id || confirmedGodSnapshot.policyRevision !== current.revision ||
+            confirmedGodSnapshot.hostRevision !== this.#row(id)?.revision ||
+            JSON.stringify(confirmedGodSnapshot.host) !== JSON.stringify(this.#host(id)))
+          throw new Error('完全控制模式必须针对当前主机和策略版本完成原生确认；请在侧栏重新确认。');
+      }
       const revision = current.revision + 1;
       this.#db.prepare('UPDATE policies SET revision=?,value=? WHERE host_id=?').run(revision, JSON.stringify(policy), id);
       this.#invalidate(id);
@@ -428,7 +482,7 @@ export class Store {
       const host = JSON.parse(row.value);
       if (!host.enabled) throw new Error(`主机已禁用，请先启用：${id}`);
       const record = this.#policy(id);
-      return { host, hostRevision: row.revision, policyRevision: record.revision, grantMinutes: record.policy.grantMinutes };
+      return { host, hostRevision: row.revision, policyRevision: record.revision, mode: record.policy.mode, grantMinutes: record.policy.grantMinutes };
     }), false);
   }
 
@@ -512,7 +566,7 @@ export class Store {
     return { status: 'denied', code, reason };
   }
 
-  #nativePermit(threadId, id, hostRow, record, evaluation, presentation, digest, approvalId, now) {
+  #nativePermit(threadId, id, hostRow, record, evaluation, presentation, digest, approvalId, now, sessionId) {
     const active = this.#db.prepare("SELECT COUNT(*) AS n FROM operations WHERE host_id=? AND status='active' AND counts_concurrency=1 AND (durable=1 OR expires_at>?)").get(id, now).n;
     if (countsConcurrency(evaluation.operation) && active >= record.policy.maxConcurrent) {
       if (approvalId) {
@@ -522,7 +576,7 @@ export class Store {
       return this.#nativeDenied(threadId, id, evaluation.operation, record, 'CONCURRENCY_LIMIT', '主机操作已达到并发上限；本次确认不再生效，请稍后重新申请。');
     }
     const host = JSON.parse(hostRow.value);
-    const snapshot = historySnapshot(evaluation, presentation.explanation, host);
+    const snapshot = presentationHistorySnapshot(presentation, host);
     const operationId = randomUUID(), summary = operationSummary(evaluation.operation);
     if (approvalId) {
       const updated = this.#db.prepare("UPDATE approvals SET status='consumed' WHERE id=? AND status='pending' AND source='native'").run(approvalId);
@@ -534,8 +588,8 @@ export class Store {
       VALUES(?,?,?,?,?,?,'active',?,?)`).run(operationId, threadId, id, record.revision, digest, summary, now, now + (record.policy.timeoutSeconds + 30) * 1000);
     const grant=this.#activeGrant(threadId,id,now);
     this.#db.prepare('UPDATE operations SET counts_concurrency=?,grant_id=?,host_revision=? WHERE id=?').run(Number(countsConcurrency(evaluation.operation)),grant?.grant_id??null,hostRow.revision,operationId);
-    this.#db.prepare(`INSERT INTO execution_history(operation_id,thread_id,host_id,policy_revision,snapshot,summary,explanation,status,started_at)
-      VALUES(?,?,?,?,?,?,?,'running',?)`).run(operationId, threadId, id, record.revision, JSON.stringify(snapshot), snapshot.summary, snapshot.explanation, now);
+    this.#db.prepare(`INSERT INTO execution_history(operation_id,thread_id,session_id,host_id,policy_revision,snapshot,summary,explanation,status,started_at)
+      VALUES(?,?,?,?,?,?,?,?,'running',?)`).run(operationId, threadId, sessionId, id, record.revision, JSON.stringify(snapshot), snapshot.summary, snapshot.explanation, now);
     this.#audit({ threadId, hostId: id, operationId, event: 'operation_started', summary, result: 'ready', reason: approvalId ? '已原子消费本次原生确认' : '策略允许自动执行', policyRevision: record.revision });
     this.#pruneHistory(now);
     return { status: 'ready', operationId, host, policy: record.policy, evaluation, presentation };
@@ -616,8 +670,9 @@ export class Store {
     identity(operationId,'执行标识');
     return this.#transaction(()=>{this.#db.prepare("UPDATE execution_history SET status='unknown',output_notice=? WHERE operation_id=? AND completion_known=0").run(text(reason,'状态原因',512),operationId);});
   }
-  beginNativeOperation(threadId, id, input, explanation, promptToken, expectedPolicyRevision) {
+  beginNativeOperation(threadId, id, input, explanation, promptToken, expectedPolicyRevision, sessionId = null) {
     identity(threadId, '聊天标识'); hostId(id); identity(promptToken, '原生确认标识');
+    if (sessionId !== null) identity(sessionId, '会话标识');
     return this.#transaction(() => {
       const now = Date.now();
       this.#expire(now);
@@ -641,7 +696,7 @@ export class Store {
       catch { return deny('INVALID_EXPLANATION', '操作说明无效：请提供清晰目的，不得包含凭据或控制字符。'); }
       const normalizedExplanation = presentation.explanation;
       const digest = createHash('sha256').update(JSON.stringify(canonical({ operation, explanation: normalizedExplanation }))).digest('hex');
-      if (evaluation.decision === 'allow') return this.#nativePermit(threadId, id, hostRow, record, evaluation, presentation, digest, null, now);
+      if (evaluation.decision === 'allow') return this.#nativePermit(threadId, id, hostRow, record, evaluation, presentation, digest, null, now, sessionId);
       const promptHash = createHash('sha256').update(promptToken).digest('hex');
       if (this.#db.prepare('SELECT id FROM approvals WHERE prompt_token_hash=?').get(promptHash)) return deny('PROMPT_TOKEN_REUSED', '原生确认标识不能重复使用');
       const pending = this.#db.prepare("SELECT COUNT(*) AS n FROM approvals WHERE thread_id=? AND host_id=? AND source='native' AND status='pending' AND expires_at>?").get(threadId, id, now).n;
@@ -654,8 +709,8 @@ export class Store {
         prompt_token_hash: promptHash, explanation: normalizedExplanation, presentation: JSON.stringify(presentation),
         host_snapshot: hostRow.value, policy_snapshot: JSON.stringify(record.policy),
       };
-      this.#db.prepare(`INSERT INTO approvals(id,thread_id,host_id,host_revision,policy_revision,grant_id,operation,request_hash,summary,reason,status,created_at,expires_at,source,prompt_token_hash,explanation,presentation,host_snapshot,policy_snapshot)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(row.id, threadId, id, hostRow.revision, record.revision, grant.grant_id, row.operation, digest, row.summary, row.reason, 'pending', now, row.expires_at, 'native', promptHash, normalizedExplanation, row.presentation, row.host_snapshot, row.policy_snapshot);
+      this.#db.prepare(`INSERT INTO approvals(id,thread_id,host_id,host_revision,policy_revision,grant_id,operation,request_hash,summary,reason,status,created_at,expires_at,source,prompt_token_hash,explanation,presentation,host_snapshot,policy_snapshot,session_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(row.id, threadId, id, hostRow.revision, record.revision, grant.grant_id, row.operation, digest, row.summary, row.reason, 'pending', now, row.expires_at, 'native', promptHash, normalizedExplanation, row.presentation, row.host_snapshot, row.policy_snapshot, sessionId);
       this.#audit({ threadId, hostId: id, event: 'native_approval_requested', summary: operationSummary(operation), result: 'pending', reason: '等待当前工具调用的原生确认', policyRevision: record.revision });
       return { status: 'pending', approval: this.#approval(row) };
     });
@@ -663,7 +718,7 @@ export class Store {
 
   completeNativeApproval(threadId, approvalId, promptToken, decision) {
     identity(threadId, '聊天标识'); identity(approvalId, '审批标识'); identity(promptToken, '原生确认标识');
-    if (!['approve', 'deny', 'cancel'].includes(decision)) throw new Error('原生确认决定无效');
+    if (decision !== 'approve' && !Object.hasOwn(unapprovedDecisions, decision)) throw new Error('原生确认决定无效');
     return this.#transaction(() => {
       const now = Date.now();
       this.#expire(now);
@@ -676,9 +731,10 @@ export class Store {
       const deny = (code, reason) => this.#nativeDenied(threadId, row.host_id, operation, { revision: row.policy_revision }, code, reason);
       if (row.status !== 'pending') return deny(row.status === 'expired' ? 'APPROVAL_EXPIRED' : 'APPROVAL_NOT_PENDING', '原生确认已过期、取消、失效或已经消费，请重新发起操作。');
       if (decision !== 'approve') {
+        const [outcome, code] = unapprovedDecisions[decision];
         this.#db.prepare("UPDATE approvals SET status='denied' WHERE id=? AND status='pending'").run(approvalId);
-        this.#scrubNative(approvalId);
-        return deny(decision === 'cancel' ? 'APPROVAL_CANCELLED' : 'APPROVAL_DENIED', decision === 'cancel' ? '本次原生确认已取消，未执行操作。' : '用户拒绝了本次操作，未执行。');
+        this.#scrubNative(approvalId, outcome);
+        return deny(code, unapprovedReasons[outcome] + '，本次操作未执行。');
       }
       const hostRow = this.#row(row.host_id), grant = this.#activeGrant(threadId, row.host_id, now);
       if (!hostRow || !grant || hostRow.revision !== row.host_revision || grant.grant_id !== row.grant_id || grant.policy_revision !== row.policy_revision) {
@@ -694,7 +750,7 @@ export class Store {
         return deny('APPROVAL_POLICY_DENIED', '操作不再符合已确认的权限策略，未执行。');
       }
       const presentation = operationPresentation(evaluation, row.explanation);
-      return this.#nativePermit(threadId, row.host_id, hostRow, record, evaluation, presentation, digest, approvalId, now);
+      return this.#nativePermit(threadId, row.host_id, hostRow, record, evaluation, presentation, digest, approvalId, now, row.session_id);
     });
   }
 
@@ -825,8 +881,9 @@ export class Store {
 
   #history(row, detail = false) {
     const item = {
-      id: row.id, operationId: row.operation_id, threadId: row.thread_id, hostId: row.host_id,
-      summary: row.summary, explanation: row.explanation, status: row.status,
+      id: row.id, operationId: row.operation_id, threadId: row.thread_id, sessionId: row.session_id, hostId: row.host_id,
+      summary: row.summary, explanation: row.explanation, status: row.approval_outcome ? 'not_approved' : row.status,
+      approvalOutcome: row.approval_outcome,
       startedAt: row.started_at, finishedAt: row.finished_at, exitCode: row.exit_code,
       completionKnown: Boolean(row.completion_known), truncated: Boolean(row.truncated),
       redacted: Boolean(row.redacted), outputNotice: row.output_notice,
@@ -838,20 +895,29 @@ export class Store {
       stdout: row.stdout, stderr: row.stderr, policyRevision: row.policy_revision };
   }
 
-  listHistory({ hostId: id, threadId, status, beforeId, limit } = {}) {
+  listHistory({ hostId: id, threadId, sessionId, status, fromMs, toMs, beforeId, limit } = {}) {
     if (id !== undefined) hostId(id);
     if (threadId !== undefined) identity(threadId, '聊天标识');
-    if (status !== undefined && !['running', 'completed', 'failed', 'timed_out', 'cancelled', 'unknown'].includes(status)) throw new Error('执行历史筛选状态无效');
+    if (sessionId !== undefined) identity(sessionId, '会话标识');
+    for (const bound of [fromMs, toMs]) if (bound !== undefined && (!Number.isSafeInteger(bound) || bound < 0)) throw new Error('执行历史时间必须为非负毫秒时间戳');
+    if (fromMs !== undefined && toMs !== undefined && fromMs >= toMs) throw new Error('执行历史开始时间必须早于结束时间');
+    if (status !== undefined && !['running', 'completed', 'failed', 'timed_out', 'cancelled', 'unknown', 'not_approved'].includes(status)) throw new Error('执行历史筛选状态无效');
     if (beforeId !== undefined && (!Number.isSafeInteger(beforeId) || beforeId < 1)) throw new Error('执行历史分页位置无效');
     const count = pageLimit(limit);
     return this.#transaction(() => {
       const now = Date.now(); this.#expire(now); this.#pruneHistory(now);
       const clauses = [], args = [];
-      for (const [column, value] of [['host_id', id], ['thread_id', threadId], ['status', status]]) {
+      for (const [column, value] of [['host_id', id], ['thread_id', threadId], ['session_id', sessionId]]) {
         if (value !== undefined) { clauses.push(`${column}=?`); args.push(value); }
       }
+      if (status === 'not_approved') clauses.push('approval_outcome IS NOT NULL');
+      else if (status !== undefined) { clauses.push('approval_outcome IS NULL AND status=?'); args.push(status); }
+      if (fromMs !== undefined) { clauses.push('started_at>=?'); args.push(fromMs); }
+      if (toMs !== undefined) { clauses.push('started_at<?'); args.push(toMs); }
       if (beforeId !== undefined) { clauses.push('id<?'); args.push(beforeId); }
-      const rows = this.#db.prepare(`SELECT * FROM execution_history ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`).all(...args, count + 1);
+      const rows = this.#db.prepare(`SELECT id,operation_id,thread_id,session_id,host_id,summary,explanation,status,approval_outcome,
+        started_at,finished_at,exit_code,completion_known,truncated,redacted,output_notice FROM execution_history
+        ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`).all(...args, count + 1);
       const items = rows.slice(0, count).map(row => this.#history(row));
       return { items, nextCursor: rows.length > count ? items.at(-1).id : null };
     });

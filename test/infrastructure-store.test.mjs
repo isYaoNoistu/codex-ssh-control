@@ -57,7 +57,7 @@ function approved(s,threadId,hostId,operation){
 }
 function transferFixture(t){
   const {s,dir}=setup(t),p=s.getPolicy('app');
-  s.savePolicy('owner','app',{...p.policy,maxConcurrent:1,roots:[{id:'remote',path:'/srv/releases',read:true,write:true}],localRoots:[{id:'local',path:'C:/build',read:true,write:true}],transfers:{enabled:true}},p.revision);
+  s.savePolicy('owner','app',{...p.policy,mode:'restricted',maxConcurrent:1,roots:[{id:'remote',path:'/srv/releases',read:true,write:true}],localRoots:[{id:'local',path:'C:/build',read:true,write:true}],transfers:{enabled:true}},p.revision);
   s.grant('owner',['app']);
   const operation={kind:'transfer',planId:'transfer-one',direction:'upload',localPath:'C:/build/app.jar',localRoot:'C:/build',remotePath:'/srv/releases/app.jar',remoteRoot:'/srv/releases',blockedPaths:[],localBlockedPaths:[],expiresAt:Date.now()+60000,maxBytes:1073741824,size:4096,sha256:'a'.repeat(64),sourceSnapshot:{dev:'1',ino:'2',size:4096,mtimeNs:'1',ctimeNs:'1',mode:420,sha256:'a'.repeat(64)},targetSnapshot:null,overwrite:'never'};
   const original=approved(s,'owner','app',operation);

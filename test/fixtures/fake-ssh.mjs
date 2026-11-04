@@ -17,7 +17,10 @@ childProcess.spawn=function(executable,args,options){
   let stderr='';
   let output=command.includes('SSH_CONTROL_OK')?'SSH_CONTROL_OK\ndeploy\nfixture\nLinux\n':command.includes('diagnostic-sensitive-fixture')?'api_key=test-fixture-value\n':'fixture command completed\n';
   if(command.includes('diagnostic-stderr-fixture'))stderr='api_key=stderr-fixture-value';
-  if(command.includes('python3')){
+  if(input.startsWith('{"action":"storage",')||input.startsWith('{"action":"collect",')){
+   const req=JSON.parse(input),collect=req.action==='collect';
+   output=JSON.stringify({bytes:240,retainedBytes:collect?40:240,reclaimedBytes:collect?200:0,collected:collect});
+  } else if(command.includes('python3')){
    const match=input.match(/base64\.b64decode\('([^']+)'\)/);
    const operation=JSON.parse(Buffer.from(match[1],'base64').toString('utf8')).operation;
    const result=operation.kind==='read'?{content:'fixture readable file body'}:operation.kind==='write'?{written:true,bytes:Buffer.byteLength(operation.content,'utf8')}:operation.kind==='list'?{entries:[{name:'public.txt',type:'file',bytes:12}],truncated:false}:{deleted:true};

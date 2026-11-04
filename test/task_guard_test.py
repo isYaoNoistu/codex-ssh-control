@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import tempfile
 import unittest
 import uuid
 
@@ -18,8 +19,9 @@ class TaskGuardTest(unittest.TestCase):
         self.id=uuid.uuid4().hex
         self.token=uuid.uuid4().hex+uuid.uuid4().hex
 
-    def call(self, action, spec=None, token=None, python38=False):
+    def call(self, action, spec=None, token=None, python38=False, **extra):
         payload={'action':action,'id':self.id,'token':token or self.token}
+        payload.update(extra)
         if spec is not None: payload['spec']=spec
         invocation=[sys.executable,str(HELPER)]
         if python38:
@@ -60,6 +62,8 @@ class TaskGuardTest(unittest.TestCase):
 
     def test_read_missing_does_not_create_state(self):
         result=self.call('read');self.assertEqual(result['status'],'missing')
+        result=self.call('storage');self.assertTrue(result['missing']);self.assertFalse(result['collected'])
+        self.assertIn('error',self.call('collect',expectedStatus='completed'))
         root=pathlib.Path('/tmp')/('codex-ssh-tasks-'+str(os.getuid()))
         self.assertFalse((root/self.id).exists())
 
@@ -98,6 +102,25 @@ class TaskGuardTest(unittest.TestCase):
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         self.assertFalse(module.signal_verified({'pid':os.getpid(),'pgid':os.getpgrp(),'starttime':'0'},15))
 
+    def test_atomic_snapshot_replacement_during_open_retries_only_the_detached_inode(self):
+        spec=importlib.util.spec_from_file_location('task_guard',HELPER)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temp:
+            folder=os.open(temp,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                module.atomic(folder,'state.json',{'generation':1})
+                checked=module.checked
+                def replace_before_check(fd,directory=False):
+                    module.checked=checked
+                    module.atomic(folder,'state.json',{'generation':2})
+                    return checked(fd,directory)
+                module.checked=replace_before_check
+                self.assertEqual(module.read_json(folder,'state.json'),{'generation':2})
+                os.link('state.json','other',src_dir_fd=folder,dst_dir_fd=folder)
+                with self.assertRaisesRegex(ValueError,'private regular'):
+                    module.read_json(folder,'state.json')
+            finally:os.close(folder)
+
     def test_process_resource_limits_are_applied(self):
         self.call('submit',self.spec("python3 -c 'import resource; print(resource.getrlimit(resource.RLIMIT_CPU)[0])'",cpuSeconds=3,maxMemoryMiB=128,maxProcesses=20))
         done=self.finish();self.assertEqual(done['status'],'completed')
@@ -109,6 +132,44 @@ class TaskGuardTest(unittest.TestCase):
         self.id=uuid.uuid4().hex
         (root/self.id).symlink_to('/tmp',target_is_directory=True)
         self.assertIn('error',self.call('submit',self.spec('true')))
+
+    def test_gc_frees_only_owned_private_files_and_preserves_deduplication(self):
+        spec=self.spec('printf abc')
+        self.call('submit',spec)
+        self.assertEqual(self.finish()['status'],'completed')
+        self.assertIn('error',self.call('collect',token='b'*64,expectedStatus='completed'))
+        self.assertIn('error',self.call('collect',expectedStatus='cancelled'))
+        measured=self.call('storage')
+        self.assertGreater(measured['bytes'],3)
+        for _ in range(30):
+            result=self.call('collect',expectedStatus='completed')
+            if 'error' not in result: break
+            time.sleep(.02)
+        self.assertTrue(result['collected'],result)
+        self.assertGreaterEqual(result['reclaimedBytes'],3)
+        self.assertGreater(result['retainedBytes'],0)
+        self.assertEqual(self.call('storage')['bytes'],result['retainedBytes'])
+        self.assertEqual(self.call('collect',expectedStatus='completed')['reclaimedBytes'],0)
+        replay=self.call('submit',spec)
+        self.assertEqual(replay['status'],'completed')
+        self.assertEqual(replay['log'],'')
+        self.assertIn('error',self.call('submit',self.spec('echo unexpected')))
+
+    def test_gc_refuses_active_unknown_timeout_and_foreign_files(self):
+        self.call('submit',self.spec('sleep 10',timeoutSeconds=1))
+        self.assertIn('error',self.call('collect',expectedStatus='completed'))
+        self.assertEqual(self.finish()['status'],'timed_out')
+        self.assertIn('error',self.call('collect',expectedStatus='timed_out'))
+        self.id=uuid.uuid4().hex
+        self.call('submit',self.spec('printf hello'))
+        self.finish()
+        directory=pathlib.Path('/tmp')/('codex-ssh-tasks-'+str(os.getuid()))/self.id
+        external=directory/'foreign'
+        external.write_text('keep')
+        self.assertIn('error',self.call('collect',expectedStatus='completed'))
+        self.assertEqual((directory/'output').read_bytes(),b'hello')
+        self.assertEqual(external.read_text(),'keep')
+        self.assertIn('error',self.call('collect',expectedStatus='unknown'))
 
     def test_cancel_preserves_unrelated_process(self):
         unrelated=subprocess.Popen(['sleep','10'])

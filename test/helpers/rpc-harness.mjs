@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-export async function setup(t,{elicitation=true}={}){
+export async function setup(t,{elicitation=true,initialMode='restricted'}={}){
  const dir=await mkdtemp(path.join(tmpdir(),'ssh-native-rpc-'));
  const log=path.join(dir,'spawns');
  const child=spawn(process.execPath,['--import',new URL('../fixtures/fake-ssh.mjs',import.meta.url).href,fileURLToPath(new URL('../../src/server.mjs',import.meta.url))],{env:{...process.env,SSH_CONTROL_DATA:dir,SSH_CONTROL_SKILLS:path.join(dir,'skills'),SSH_TEST_SPAWNS:log},stdio:['pipe','pipe','pipe'],windowsHide:true});
@@ -39,6 +39,7 @@ export async function setup(t,{elicitation=true}={}){
  const grants=()=>admin('ssh_grant',{hostIds:['fixture']});
  const count=async()=>{try{return (await readFile(log,'utf8')).trim().split('\n').length;}catch(e){if(e.code==='ENOENT')return 0;throw e;}};
  const patchPolicy=async patch=>{const record=(await call('ssh_permissions',{hostId:'fixture'})).structuredContent.policy;return admin('ssh_policy_save',{hostId:'fixture',policy:{...record.policy,...patch},expectedRevision:record.revision});};
+ if(initialMode)assert.ok(!(await patchPolicy({mode:initialMode})).isError);
  return {rpc,call,admin,batchCalls,grants,count,patchPolicy,dir,prompts,stop,answerAndCancel:(id,result,requestId)=>sendBatch([{id,result},{method:'notifications/cancelled',params:{requestId}}]),setElicitation:fn=>{onElicitation=fn;},answer:(id,result)=>send({id,result}),cancel:id=>send({method:'notifications/cancelled',params:{requestId:id}})};
 }
 export const pause=()=>new Promise(resolve=>setTimeout(resolve,40));

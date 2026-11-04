@@ -65,7 +65,7 @@ function list(value, label) { if (!Array.isArray(value) || value.length > 64) th
 export function validatePolicy(input) {
   object(input, fields, '权限策略');
   const policy = { ...defaultPolicy(), ...input };
-  if (!['restricted', 'approval'].includes(policy.mode)) throw new Error('执行模式无效');
+  if (!['restricted', 'readonly', 'approval', 'god'].includes(policy.mode)) throw new Error('执行模式无效');
   for (const [key, min, max] of [['grantMinutes', 5, 1440], ['timeoutSeconds', 1, 300], ['maxConcurrent', 1, 8], ['maxOutputKiB', 16, 128]]) {
     if (!Number.isInteger(policy[key]) || policy[key] < min || policy[key] > max) throw new Error(key + '超出允许范围');
   }
@@ -143,6 +143,10 @@ export function isProtectedPath(value, blockedPaths = []) {
 export function isSensitiveContent(text) {
   if (typeof text !== 'string') return false;
   if (/-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/u.test(text) || /\bAuthorization\s*:\s*(?:Bearer|Basic)\s+\S+/iu.test(text) || /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:]+:[^\s/@]+@/iu.test(text)) return true;
+  // Match credentials with a value. A bare --password prompt or --password-stdin carries none.
+  if (/(?:^|[\s;&|])--(?:password|passwd|token|auth-token|access-token|api-key|client-secret)(?:=|[ \t]+(?!-))["']?[^'"\s;&|]/iu.test(text) ||
+      /(?:^|[\s;&|])(?:-u|--user)(?:[ \t]+|=)["']?[^'"\s:]+:[^'"\s;&|]+/u.test(text)) return true;
+  if (/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{16,}|xox[baprs]-[A-Za-z0-9-]{16,})/u.test(text)) return true;
   // Docker permits a custom config directory; its auth field is an encoded credential.
   // Parse complete configs as well so JSON-escaped property names cannot evade this check.
   try {
@@ -224,9 +228,30 @@ function sensitiveCommand(command, cwd, blockedPaths) {
 }
 export function evaluateOperation(inputPolicy, inputOperation) {
   const policy = validatePolicy(inputPolicy), operation = normalizeOperation(inputOperation);
-  const extended=evaluateInfrastructureOperation(policy,operation);if(extended)return extended;
+  if (policy.mode === 'readonly' && !readOnlyOperation(operation)) {
+    return { decision: 'deny', code: 'READ_ONLY_MODE', reason: '只读模式仅允许固定只读查询和受管文件读取。',
+      summary: '只读模式拒绝此操作', operation };
+  }
+  const extended = evaluateInfrastructureOperation(policy, operation);
+  if (extended) {
+    const maintenance=operation.kind==='lifecycle' || (operation.kind==='transfer_control' && operation.action==='cleanup');
+    if (policy.mode === 'god' && !maintenance && (extended.decision === 'ask' || operation.kind === 'capabilities'))
+      return { ...extended, decision: 'allow', code: 'GOD_MODE', reason: '主机已开启完全控制模式。' };
+    return extended;
+  }
   const summary = operation.kind === 'action' ? catalog.get(operation.actionId).label + (operation.args.name ? '：' + operation.args.name : '') : operation.kind === 'command' ? '执行自定义命令' : operation.kind === 'test' ? '测试连接' : ({ list: '列出目录', read: '读取文件', write: '写入文件', delete: '删除文件' }[operation.kind] + '：' + operation.path);
   const result = (decision, code, reason, extra = {}) => ({ decision, code, reason, operation, summary, ...extra });
+  if (policy.mode === 'god') {
+    if (['list','read','write','delete'].includes(operation.kind)) {
+      return result('allow', 'GOD_MODE', '完全控制模式：受管文件操作使用远端根目录。', {
+        file: { root: '/', relativePath: operation.path.slice(1) || '.', blockedPaths: [] }
+      });
+    }
+    const action = operation.kind === 'test' ? { actionId: 'connection.test', args: {} }
+      : operation.kind === 'command' ? resolveSafeCommand(operation.command) : operation;
+    const command = action ? buildActionCommand(action.actionId, action.args) : operation.command;
+    return result('allow', 'GOD_MODE', '完全控制模式：以远端账号权限直接执行。', { command });
+  }
   if (['list', 'read', 'write', 'delete'].includes(operation.kind)) {
     if (isProtectedPath(operation.path, policy.blockedPaths)) return result('deny', 'PROTECTED_PATH', '安全配置、凭据或明确禁止的路径不可访问');
     if (operation.kind === 'write' && isSensitiveContent(operation.content)) return result('deny', 'SENSITIVE_CONTENT', '检测到私钥或凭据内容，禁止写入');
@@ -261,4 +286,18 @@ export function evaluateOperation(inputPolicy, inputOperation) {
   if (policy.actions[action.actionId] === 'deny' || actionRule === 'deny') return result('deny', 'ACTION_DENIED', '当前策略禁止此操作');
   const decision = info.mutating || info.approvalRequired || policy.actions[action.actionId] === 'ask' || supplement === 'ask' || actionRule === 'ask' ? 'ask' : 'allow';
   return result(decision, decision === 'ask' ? 'ACTION_REQUIRES_APPROVAL' : 'ACTION_ALLOWED', decision === 'ask' ? '此操作必须由用户确认' : '允许内置非敏感诊断操作', { command });
+}
+
+function readOnlyOperation(operation) {
+  switch (operation.kind) {
+    case 'action': return !catalog.get(operation.actionId).mutating;
+    case 'command': {
+      const alias = resolveSafeCommand(operation.command);
+      return Boolean(alias && !catalog.get(alias.actionId).mutating);
+    }
+    case 'read': case 'list': case 'test': case 'capabilities': return true;
+    case 'job_control': case 'transfer_control': return operation.action === 'read';
+    case 'lifecycle': return operation.action === 'inspect';
+    default: return false;
+  }
 }

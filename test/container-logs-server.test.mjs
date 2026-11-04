@@ -77,7 +77,7 @@ test('declined, cancelled or unchecked container log confirmations never start S
   const {executing,message}=await pendingApproval(h);
   h.answer(message.id,response);
   assert.equal((await executing).isError,true);assert.equal(await h.count(),0);
-  assert.equal((await h.admin('ssh_history_list')).structuredContent.items.length,0);
+  assert.deepEqual((await h.admin('ssh_history_list')).structuredContent.items.map(x=>x.status),['not_approved']);
   const db=new DatabaseSync(path.join(h.dir,'store.sqlite'));
   try{assert.equal(db.prepare("SELECT COUNT(*) n FROM approvals WHERE status IN ('pending','approved')").get().n,0);}finally{db.close();}
  });
@@ -90,7 +90,7 @@ test('cancelling a container logs request rejects a late confirmation without SS
  assert.equal((await executing).isError,true);
  h.answer(message.id,{action:'accept',content:{confirm:true}});await pause();
  assert.equal(await h.count(),0);
- assert.equal((await h.admin('ssh_history_list')).structuredContent.items.length,0);
+ assert.deepEqual((await h.admin('ssh_history_list')).structuredContent.items.map(x=>x.approvalOutcome),['cancelled']);
 });
 
 test('revoking access while container logs confirmation is open prevents SSH',async t=>{
@@ -100,7 +100,7 @@ test('revoking access while container logs confirmation is open prevents SSH',as
  h.answer(message.id,{action:'accept',content:{confirm:true}});
  assert.equal((await executing).isError,true);assert.equal(await h.count(),0);
  assert.deepEqual((await h.call('ssh_status')).structuredContent.state.grantedHostIds,[]);
- assert.equal((await h.admin('ssh_history_list')).structuredContent.items.length,0);
+ assert.deepEqual((await h.admin('ssh_history_list')).structuredContent.items.map(x=>x.approvalOutcome),['invalidated']);
 });
 
 test('invalid container log names, bounds and unsupported flags fail before approval or SSH',async t=>{

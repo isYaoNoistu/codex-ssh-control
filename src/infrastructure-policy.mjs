@@ -2,7 +2,7 @@ import { isProtectedPath, isSensitiveContent, evaluateOperation } from './policy
 import path from 'node:path';
 import {INFRASTRUCTURE_DEFAULTS} from './infrastructure-defaults.mjs';
 export {INFRASTRUCTURE_DEFAULTS} from './infrastructure-defaults.mjs';
-const kinds = new Set(['job','job_control','transfer','transfer_inspect','transfer_control','transfer_mkdir','capabilities']);
+const kinds = new Set(['job','job_control','transfer','transfer_inspect','transfer_control','transfer_mkdir','capabilities','lifecycle']);
 const shells = new Set(['/bin/sh','/bin/bash','/bin/zsh']);
 const forbiddenEnv = /^(?:PATH|HOME|SHELL|ENV|BASH_ENV|ZDOTDIR|IFS|CDPATH|GLOBIGNORE|SHELLOPTS|BASHOPTS|LD_.*|DYLD_.*|PYTHON.*|NODE.*|PERL.*|RUBY.*|SSH_.*)$/iu;
 const safeName = /^[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}$/u;
@@ -65,6 +65,11 @@ function snapshot(v) {
 export function normalizeInfrastructureOperation(input) {
   if(!kinds.has(input.kind))return null;
   const {kind}=input;
+  if(kind==='lifecycle'){
+    object(input,['kind','resource','action','id'],'私有状态操作');
+    if(!['job','transfer'].includes(input.resource)||!['collect','inspect'].includes(input.action))throw new Error('无效的回收目标或操作');
+    return {kind,resource:input.resource,action:input.action,id:str(input.id,'记录标识',128)};
+  }
   if(kind==='capabilities'){object(input,['kind'],'能力探测');return {kind};}
   if(kind.endsWith('_control')){
     object(input,['kind','id','action','transfer'],'任务控制');str(input.id,'任务ID',128);
@@ -74,6 +79,9 @@ export function normalizeInfrastructureOperation(input) {
       if(input.transfer?.kind!=='transfer')throw new Error('续传需要完整的新审批快照');
       out.transfer=normalizeInfrastructureOperation(input.transfer);
       if(out.transfer.planId!==input.id)throw new Error('续传计划不匹配');
+    }else if(input.action==='cleanup' && input.transfer!==undefined){
+      if(input.transfer?.kind!=='transfer_inspect'||input.transfer.recursive===true)throw new Error('清理需要对应传输的路径快照');
+      out.transfer=normalizeInfrastructureOperation(input.transfer);
     }else if(input.transfer!==undefined)throw new Error('此控制操作不接受传输快照');
     return out;
   }
@@ -107,15 +115,25 @@ export function normalizeInfrastructureOperation(input) {
 }
 export function evaluateInfrastructureOperation(policy,operation) {
   if(!kinds.has(operation.kind))return null;
+  if(operation.kind==='lifecycle'){
+    const collect=operation.action==='collect';
+    return {operation,decision:collect?'ask':'allow',code:'LIFECYCLE',summary:collect?'回收已归档记录的私有状态':'查看记录的远端私有状态占用',reason:'仅核验当前聊天拥有的记录'};
+  }
   const names={job:'提交可恢复远程任务',job_control:'管理远程任务',transfer:'传输制品文件',transfer_inspect:'核对制品路径和摘要',transfer_control:'管理制品传输',transfer_mkdir:'创建传输目标目录',capabilities:'探测远端执行能力'};
   const result=(decision,code,reason,extra={})=>({decision,code,reason,operation,summary:names[operation.kind],...extra});
   if(operation.kind==='capabilities')return result(policy.actions['connection.test'],'CAPABILITY_PROBE','读取远端运行条件；不安装软件');
   if(operation.kind.endsWith('_control')){
+    if(operation.action==='cleanup'){
+      if(!operation.transfer)return result('deny','TRANSFER_SCOPE_REQUIRED','清理需要对应传输的路径快照');
+      const scope=evaluateInfrastructureOperation(policy,operation.transfer);
+      if(scope.decision==='deny')return {...scope,operation,summary:names[operation.kind]};
+      return result('ask','TRANSFER_CLEANUP_CONFIRM','回收此传输的私有状态必须逐次确认');
+    }
     if(operation.action==='resume'){
       const next=evaluateInfrastructureOperation(policy,operation.transfer);
       return {...next,operation,summary:names[operation.kind]};
     }
-    return result(['cancel','cleanup'].includes(operation.action)?'ask':'allow','TASK_CONTROL','仅管理当前聊天拥有的精确任务');
+    return result(operation.action==='cancel'?'ask':'allow','TASK_CONTROL','仅管理当前聊天拥有的精确任务');
   }
   if(operation.kind==='job') {
     if(!policy.jobs.enabled)return result('deny','JOBS_DISABLED','尚未启用可恢复任务');

@@ -19,8 +19,8 @@ export function normalizeExplanation(value, { required = false, fallback = '' } 
 export function operationPresentation(evaluation, explanation) {
   if (!evaluation || typeof evaluation !== 'object') throw new Error('缺少已验证的操作');
   const operation = normalizeOperation(evaluation.operation);
-  if(['job','job_control','transfer','transfer_inspect','transfer_control','transfer_mkdir','capabilities'].includes(operation.kind)) {
-    const mutating=['job','transfer','transfer_mkdir'].includes(operation.kind)||['cancel','resume','cleanup'].includes(operation.action);
+  if(['job','job_control','transfer','transfer_inspect','transfer_control','transfer_mkdir','capabilities','lifecycle'].includes(operation.kind)) {
+    const mutating=['job','transfer','transfer_mkdir'].includes(operation.kind)||['cancel','resume','cleanup','collect'].includes(operation.action);
     const fallback=operation.kind==='capabilities'?'读取远端系统与文件访问能力':operation.kind==='transfer_inspect'?'核对传输两端路径和源文件摘要':'读取当前聊天任务的已有状态';
     const explanationText=normalizeExplanation(explanation,{required:mutating,fallback:mutating?'':fallback});
     if(unsafeDisplay.test(JSON.stringify(operation).replaceAll('\\n','').replaceAll('\\r','').replaceAll('\\t','')))throw new Error('操作包含无法安全展示的控制字符');
@@ -56,12 +56,22 @@ function redactMetadata(value) {
 }
 
 export function historySnapshot(evaluation, explanation, host) {
-  const presentation = operationPresentation(evaluation, explanation);
+  return presentationHistorySnapshot(operationPresentation(evaluation, explanation), host);
+}
+
+export function presentationHistorySnapshot(presentation, host) {
   if (!host || typeof host !== 'object') throw new Error('缺少主机快照');
   const operation = presentation.operation;
-  const operationSnapshot = operation.kind === 'write' ? {
-    kind: 'write', path: operation.path, bytes: Buffer.byteLength(operation.content, 'utf8'), sha256: createHash('sha256').update(operation.content, 'utf8').digest('hex'),
-  } : operation;
+  let operationSnapshot = operation;
+  if (operation.kind === 'write') {
+    operationSnapshot = {kind: 'write', path: operation.path, bytes: Buffer.byteLength(operation.content, 'utf8'),
+      sha256: createHash('sha256').update(operation.content, 'utf8').digest('hex')};
+  } else if (operation.kind === 'job') {
+    const env = {};
+    for (const [key, value] of Object.entries(operation.env ?? {}))
+      env[key] = isSensitiveContent(key + '=' + value) ? REDACTED_TEXT : value;
+    operationSnapshot = {...operation, env};
+  }
   return redactMetadata({
     summary: presentation.summary, explanation: presentation.explanation,
     requestedCommand: presentation.requestedCommand, command: presentation.command, cwd: presentation.cwd,

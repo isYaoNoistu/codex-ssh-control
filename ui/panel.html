@@ -268,6 +268,11 @@ h3 { font-size: 13px; font-weight: 600; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; scroll-behavior: auto !important; } }
 @media (forced-colors: active) { button, input, select, textarea, .switch { border: 1px solid ButtonText; } .switch[aria-checked="true"] { background: Highlight; } .switch::after { background: ButtonText; } }
+.history-host-grid {display:grid; gap:8px; margin:12px 0}
+.history-host-grid button {display:grid; text-align:left; gap:3px; padding:12px; overflow-wrap:anywhere}
+.event-badge[data-tone=success] {color:var(--success); background:color-mix(in srgb,var(--success) 11%,var(--bg)); border:1px solid color-mix(in srgb,var(--success) 32%,var(--bg))}
+.event-badge[data-tone=failure] {color:var(--danger); background:var(--danger-soft)}
+.event-badge[data-tone=warning] {color:light-dark(#795300,#f2cf82); background:light-dark(#fff3cd,#403822)}
 </style>
 </head>
 <body><main class="shell">
@@ -312,15 +317,20 @@ h3 { font-size: 13px; font-weight: 600; }
   <section id="policy-editor" class="host-pane" role="tabpanel" hidden aria-labelledby="detail-tab-policy">
     <p id="policy-revision" class="hint"></p>
     <form id="policy-form">
+      <div class="field"><label for="policy-mode">基础权限</label><select id="policy-mode"><option value="readonly">纯读</option><option value="approval">执行 + 审批</option><option value="god">上帝模式 · ALL IN</option><option id="legacy-mode-option" value="restricted" hidden>已有受限策略</option></select><p id="mode-description" class="hint"></p></div>
+      <p id="shell-warning" class="warning-note" hidden>任意 Shell 每次执行都需要审批。目录规则不能约束 Shell 内部访问。</p>
+      <div id="god-warning" class="delete-box" hidden><strong>此主机会获得完整远程操作权限</strong><p id="god-target"></p><p>获授权的聊天可使用当前 SSH 账号直接执行任意 Shell，读取密钥和凭据、修改或删除文件及服务。主机禁止规则与逐条确认将被跳过；root 账号可操作整台服务器。</p><label id="god-ack-row" class="checkbox"><input id="god-ack" type="checkbox">我已核对目标主机，理解并接受上述权限。</label></div>
+      <details id="advanced-settings" class="policy-section"><summary>目录、命令与运行限制</summary>
       <div id="protected-resources" class="protection-note">内置敏感资源保护 · 不可关闭<br><span class="hint">SSH 密钥、凭据、.env、系统安全配置等敏感路径始终禁止访问。补充保护只能增加限制。内容检查不能识别任意位置的所有秘密。</span></div>
       <section class="policy-section"><div class="section-heading"><h2>文件目录范围</h2><button id="add-root" type="button" class="small">＋ 添加目录</button></div><p class="hint">填写远程绝对路径，分别允许读取和写入；写入、替换与删除仍需逐次审批。未配置目录时禁止文件操作。</p><div id="policy-roots" class="rule-list"></div></section>
       <details class="policy-section"><summary>本地制品目录范围</summary><p class="hint">上传需要本地读取与远端写入，下载需要远端读取与本地写入；两端都必须授权。</p><div id="policy-local-roots" class="rule-list"></div><button id="add-local-root" type="button" class="small">＋ 添加本地目录</button></details>
       <details class="policy-section"><summary>可恢复任务与制品传输</summary><p class="hint">在聊天中发起任务和传输，变更仍逐次原生确认。后台任务断线后继续运行；原始 shell 不受目录规则隔离。</p><div id="infrastructure-policy"></div></details>
       <details class="policy-section"><summary>额外禁止目录</summary><p class="hint">即使位于允许目录内，这些目录及其子路径也不能访问。</p><div id="policy-blocked" class="rule-list"></div><button id="add-blocked" type="button" class="small">＋ 添加禁止目录</button></details>
       <details class="policy-section"><summary>固定操作权限</summary><p class="hint">系统状态操作可以自动允许；启动、停止、重启等变更只能“需确认”或“禁止”。安全服务始终受保护。</p><div id="policy-actions" class="action-rules"></div></details>
-      <details class="policy-section"><summary>命令与高级模式</summary><div class="field"><label for="policy-mode">命令执行模式</label><select id="policy-mode"><option value="restricted">受限模式：固定操作与安全别名</option><option value="approval">高级模式：原始 shell 每次审批</option></select></div><p id="shell-warning" class="warning-note" hidden>高级模式允许申请执行原始 shell；每条命令必须审批。目录规则不能限制 shell 内部的文件访问，批准前必须检查完整命令。可识别的敏感操作仍禁止。</p><p class="hint">补充规则只可禁止命令或要求确认，不能让任意 shell 自动执行。按原始文本匹配，不使用正则表达式。</p><div id="policy-rules" class="rule-list"></div><button id="add-command-rule" type="button" class="small">＋ 添加命令规则</button></details>
+      <details class="policy-section"><summary>命令规则</summary><p class="hint">补充规则只可禁止命令或要求确认，不能让任意 shell 自动执行。按原始文本匹配，不使用正则表达式。</p><div id="policy-rules" class="rule-list"></div><button id="add-command-rule" type="button" class="small">＋ 添加命令规则</button></details>
       <details class="policy-section"><summary>授权时限与运行限制</summary><div class="form-grid limits-grid"><div class="field"><label for="policy-grant">授权最长有效期（分钟）</label><input id="policy-grant" type="number" min="5" max="1440" required></div><div class="field"><label for="policy-timeout">单次运行超时（秒）</label><input id="policy-timeout" type="number" min="1" max="300" required></div><div class="field"><label for="policy-concurrent">最多并发操作</label><input id="policy-concurrent" type="number" min="1" max="8" required></div><div class="field"><label for="policy-output">最多输出（KiB）</label><input id="policy-output" type="number" min="16" max="128" required></div></div></details>
       <details id="preview-section" class="policy-section"><summary>规则试跑 · 不连接服务器</summary><p class="hint">使用当前表单草稿检查规则，不保存设置、不执行 SSH。</p><div class="field"><label for="preview-kind">操作类型</label><select id="preview-kind"><option value="action">固定操作</option><option value="command">原始命令</option><option value="list">列出目录</option><option value="read">读取文件</option><option value="write">写入文件</option><option value="delete">删除文件</option></select></div><div id="preview-action-fields"><div class="field"><label for="preview-action">固定操作</label><select id="preview-action"></select></div><div id="preview-parameters" class="form-grid"></div></div><div id="preview-command-fields" hidden><div class="field"><label for="preview-command">完整命令</label><textarea id="preview-command" rows="3" spellcheck="false" maxlength="16000"></textarea></div><div class="field"><label for="preview-cwd">工作目录<span class="optional">可选</span></label><input id="preview-cwd" type="text" placeholder="留空使用主机已保存的默认目录" spellcheck="false" aria-describedby="preview-cwd-hint"><p id="preview-cwd-hint" class="hint">留空时使用主机已保存的默认目录；固定操作始终在 / 执行。</p></div></div><div id="preview-path-fields" class="field" hidden><label for="preview-path">远程绝对路径</label><input id="preview-path" type="text" placeholder="/srv/app/config.txt" spellcheck="false"></div><div id="preview-content-fields" class="field" hidden><label for="preview-content">拟写入内容</label><textarea id="preview-content" rows="3" spellcheck="false"></textarea></div><button id="preview-run" type="button" class="small preview-run">检查规则（不执行）</button><div id="preview-result" class="result-box" role="status" hidden></div></details>
+      </details>
       <div class="policy-footer"><p id="policy-save-notice" class="warning-note">保存后将撤销此主机所有聊天的现有授权，并使尚未完成的确认失效；需要重新授权。已开始的远端操作不会撤销。</p><div class="form-actions"><button id="cancel-policy" type="button">还原权限设置</button><button id="save-policy" type="submit" class="primary">保存并撤销旧授权</button></div></div>
     </form>
   </section>
@@ -329,8 +339,18 @@ h3 { font-size: 13px; font-weight: 600; }
   <section id="audit-view" role="tabpanel" aria-labelledby="tab-audit" hidden><div class="section-heading"><h2>权限与操作记录</h2><button id="refresh-audit" type="button" class="small">刷新</button></div><p class="hint">记录授权、规则变更、审批和执行结果。日志不保存文件内容或完整原始命令。</p><div class="filter-grid"><div class="field"><label for="audit-host">主机</label><select id="audit-host"><option value="">全部主机</option></select></div><div class="field"><label for="audit-result">结果</label><select id="audit-result"><option value="">全部结果</option><option value="pending">待审批</option><option value="approved">已批准</option><option value="denied">已拒绝</option><option value="ready">已允许执行</option><option value="expired">已到期</option><option value="invalidated">已失效</option><option value="completed">已完成</option><option value="failed">失败</option><option value="timed_out">超时</option><option value="cancelled">已取消</option></select></div></div><div id="audit-list" class="event-list" aria-live="polite"></div><p id="audit-empty" class="empty" hidden>暂无符合条件的记录。</p><button id="audit-more" type="button" class="small" hidden>加载更早记录</button></section>
   <section id="history-view" role="tabpanel" aria-labelledby="tab-history" hidden>
     <div class="field"><label for="execution-kind">记录类型</label><select id="execution-kind"><option value="history">普通执行记录</option><option value="jobs">可恢复任务</option><option value="transfers">制品传输</option></select></div>
-    <section id="infrastructure-view" hidden><div class="infrastructure-tools"><button id="infrastructure-refresh" type="button" class="small">刷新运行状态</button><button id="infrastructure-back" type="button" class="quiet small" hidden>← 返回运行列表</button></div><p class="hint">任务和传输在聊天中发起。状态未知不代表失败；核对远端状态不会重放命令。取消和恢复会弹出原生确认。</p><div id="infrastructure-list" class="event-list infrastructure-list" aria-live="polite"></div><button id="infrastructure-more" type="button" class="small" hidden>加载更多运行记录</button><div id="infrastructure-detail" class="result-box" aria-live="polite" hidden></div><div class="infrastructure-tools"><button id="infrastructure-output-more" type="button" class="small" hidden>读取后续输出</button><button id="infrastructure-reconcile" type="button" class="small" hidden>核对远端任务状态</button><button id="infrastructure-resume" type="button" class="small" hidden>恢复传输</button><button id="infrastructure-cancel" type="button" class="small danger" hidden>取消运行</button></div><p id="infrastructure-grant-note" class="warning-note" hidden>当前授权已失效或主机停用，请重新授权后控制此运行。</p></section>
-    <div id="history-list-view"><div class="section-heading"><h2>执行历史</h2><button id="refresh-history" type="button" class="small">刷新</button></div><p class="hint">查看执行目的、原始命令和最终输出。敏感输出会隐藏；这里只查看记录，不会重新执行。</p><div class="filter-grid"><div class="field"><label for="history-host">主机</label><select id="history-host"><option value="">全部主机</option></select></div><div class="field"><label for="history-status">执行状态</label><select id="history-status"><option value="">全部状态</option><option value="running">执行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="timed_out">超时</option><option value="cancelled">已取消</option><option value="unknown">状态未知</option></select></div></div><div id="history-list" class="event-list" aria-live="polite"></div><p id="history-empty" class="empty" hidden>暂无执行记录。</p><button id="history-more" type="button" class="small" hidden>加载更早记录</button></div>
+    <section id="infrastructure-view" hidden><div class="infrastructure-tools"><button id="infrastructure-refresh" type="button" class="small">刷新运行状态</button><button id="infrastructure-back" type="button" class="quiet small" hidden>← 返回运行列表</button></div><p class="hint">任务和传输在聊天中发起。状态未知不代表失败；核对远端状态不会重放命令。取消和恢复会弹出原生确认。</p><div id="infrastructure-list" class="event-list infrastructure-list" aria-live="polite"></div><button id="infrastructure-more" type="button" class="small" hidden>加载更多运行记录</button><div id="infrastructure-detail" class="result-box" aria-live="polite" hidden></div><div class="infrastructure-tools"><button id="infrastructure-output-more" type="button" class="small" hidden>读取后续输出</button><button id="infrastructure-storage" type="button" class="small" hidden>测量远端私有状态</button><button id="infrastructure-reconcile" type="button" class="small" hidden>核对远端任务状态</button><button id="infrastructure-resume" type="button" class="small" hidden>恢复传输</button><button id="infrastructure-cancel" type="button" class="small danger" hidden>取消运行</button></div><p id="infrastructure-storage-result" class="hint" role="status" hidden></p><p id="infrastructure-grant-note" class="warning-note" hidden>当前授权已失效或主机停用，请重新授权后控制此运行。</p></section>
+    <section id="history-hosts-view"><div class="section-heading"><h2>按主机查看执行历史</h2></div><div id="history-hosts" class="history-host-grid"></div><button id="history-all" type="button" class="quiet small">全部历史（含已移除的主机）</button>
+      <details id="lifecycle-panel" class="policy-section"><summary>存储、保留与归档</summary>
+        <p class="hint">仅确认终态且无恢复活动的记录可自动归档。状态未知、提交结果未知和超时记录会保留。</p>
+        <div id="storage-summary" role="status"></div>
+        <div class="field"><label for="retention-days">本地保留天数</label><input id="retention-days" type="number" min="1" max="3650" step="1"></div>
+        <div class="infrastructure-tools"><button id="retention-save" type="button">保存保留时间</button><button id="storage-refresh" type="button">刷新统计</button><button id="archive-sweep" type="button">按策略立即归档</button></div>
+        <p class="hint">远端占用按记录核验，只计插件私有文件。回收须在原聊天授权目标主机，并逐项确认。</p>
+        <div class="field"><label for="archive-host">归档主机</label><select id="archive-host"><option value="">全部主机</option></select></div>
+        <div id="archive-list" class="event-list"></div><button id="archive-more" type="button" hidden>加载更多归档</button>
+      </details></section>
+    <div id="history-list-view" hidden><button id="history-host-back" type="button" class="quiet small">← 全部主机</button><div class="section-heading"><h2 id="history-host-title">执行历史</h2><button id="refresh-history" type="button" class="small">刷新</button></div><p class="hint">查看执行目的、原始命令和最终输出。敏感输出会隐藏；这里只查看记录，不会重新执行。</p><div class="filter-grid"><div class="field"><label for="history-from">开始日期</label><input id="history-from" type="date"></div><div class="field"><label for="history-to">结束日期（含当天）</label><input id="history-to" type="date"></div><div class="field"><label for="history-session">会话 ID</label><input id="history-session" type="text" autocomplete="off" placeholder="全部会话"></div><div class="field"><label for="history-status">执行状态</label><select id="history-status"><option value="">全部状态</option><option value="running">执行中</option><option value="completed">成功</option><option value="failed">失败</option><option value="not_approved">未通过审批</option><option value="timed_out">超时</option><option value="cancelled">已取消</option><option value="unknown">状态未知</option></select></div></div><div id="history-list" class="event-list" aria-live="polite"></div><p id="history-empty" class="empty" hidden>暂无执行记录。</p><button id="history-more" type="button" class="small" hidden>加载更早记录</button></div>
     <div id="history-detail-view" hidden><div class="detail-toolbar"><button id="history-back" type="button" class="quiet small">← 返回执行历史</button><button id="refresh-history-detail" type="button" class="small">刷新详情</button></div><div id="history-detail-content" aria-live="polite"></div></div>
   </section>
   <footer id="sync-note" class="sync-note" aria-live="polite"></footer>
@@ -366,7 +386,11 @@ h3 { font-size: 13px; font-weight: 600; }
     if (!next || !Array.isArray(next.hosts) || !Array.isArray(next.grantedHostIds)) throw new Error('未收到完整主机状态，请刷新重试。');
     const updated = { threadId: typeof next.threadId === 'string' && next.threadId ? next.threadId : null, hosts: next.hosts, grantedHostIds: next.grantedHostIds, grants: Array.isArray(next.grants) ? next.grants : [], policies: Array.isArray(next.policies) ? next.policies : [], shortcutHelp: next.shortcutHelp || '' };
     for (const [id, result] of connectionTests) if (result.signature !== connectionSignature(id, updated)) connectionTests.delete(id);
-    if (state.threadId !== updated.threadId) { infrastructureSequence++; infrastructureLoading=false; infrastructureItems=[]; infrastructureSelected=null; infrastructureEntry=null; infrastructureCursor=null; infrastructureOutput=''; }
+    if (state.threadId !== updated.threadId) {
+      collectionSequence++; historySequence++; collectionLoading=historyLoading=false;
+      historyHost=null; selectedHistoryId=historyEntry=historyCursor=null; historyItems=[];
+      archiveSequence++; archiveItems=[]; archiveCursor=null;
+      infrastructureSequence++; infrastructureLoading=false; infrastructureItems=[]; infrastructureSelected=null; infrastructureEntry=null; infrastructureCursor=null; infrastructureOutput=''; }
     state = updated;
     render();
   }
@@ -623,7 +647,7 @@ h3 { font-size: 13px; font-weight: 600; }
     if (await mutate('ssh_host_remove', { hostId: id })) { deletingId = null; $('delete-confirmation').hidden = true; if (editingId === id) closeEditor(); }
   };
   const UI_TOKEN = '__SSH_UI_TOKEN__';
-  const UI_TOOLS = new Set(['ssh_host_save', 'ssh_host_remove', 'ssh_host_enabled', 'ssh_grant', 'ssh_revoke', 'ssh_policy_save', 'ssh_policy_preview', 'ssh_audit_list', 'ssh_history_list', 'ssh_history_get', 'ssh_host_key_scan', 'ssh_host_keys_confirm']);
+  const UI_TOOLS = new Set(['ssh_host_save', 'ssh_host_remove', 'ssh_host_enabled', 'ssh_grant', 'ssh_revoke', 'ssh_policy_save', 'ssh_policy_preview', 'ssh_audit_list', 'ssh_history_list', 'ssh_history_get', 'ssh_host_key_scan', 'ssh_host_keys_confirm','ssh_lifecycle_overview','ssh_lifecycle_sweep','ssh_lifecycle_configure','ssh_lifecycle_inspect','ssh_lifecycle_collect']);
   let activeTab = 'hosts', policyRecord = null, actionCatalog = [], rowSequence = 0;
   let localRootRows = [], infrastructurePolicyFields = [], rootRows = [], blockedRows = [], commandRows = [], actionRows = [], parameterRows = [];
   let auditItems = [], auditCursor = null, collectionLoading = false, collectionSequence = 0;
@@ -652,7 +676,7 @@ h3 { font-size: 13px; font-weight: 600; }
     if (record) {
       const roots = record.policy.roots || [];
       parts.push('读取 ' + roots.filter(root => root.read).length + ' · 写入 ' + roots.filter(root => root.write).length + ' 个目录');
-      parts.push(record.policy.mode === 'approval' ? '原始 shell 逐次审批' : '受限命令');
+      parts.push(modeLabels[record.policy.mode] || '受限命令');
     }
     if (includeAccess) parts.push(access.label + (access.expiresAt ? ' · 有效至 ' + timeLabel(access.expiresAt) : ''));
     const el = text('div', parts.join(' · '), 'host-policy-summary' + (includeAccess && access.status === 'expired' ? ' expired' : ''));
@@ -714,6 +738,7 @@ h3 { font-size: 13px; font-weight: 600; }
       if (item.parameters?.length) { const checkbox = checkControl('限制服务或容器名称', Boolean(value.actionArguments?.[item.id]), 'restrictNames'); restrict = checkbox.input; names = inputControl((value.actionArguments?.[item.id]?.names || []).join(', '), item.label + '名称白名单', 'names'); names.required = false; names.placeholder = '用逗号分隔；启用且留空表示不允许任何名称'; const box = text('div', '', 'argument-rule'); box.append(checkbox.el, fieldBox('允许的名称', names)); row.append(box); }
       $('policy-actions').append(row); actionRows.push({ item, control, names, restrict });
     }
+    $('god-ack').checked = false; $('legacy-mode-option').hidden = value.mode !== 'restricted';
     $('policy-mode').value = value.mode; $('policy-grant').value = String(value.grantMinutes); $('policy-timeout').value = String(value.timeoutSeconds);
     $('policy-concurrent').value = String(value.maxConcurrent); $('policy-output').value = String(value.maxOutputKiB);
     $('preview-kind').value = 'action'; $('preview-action').replaceChildren(...catalog.map(item => option(item.id, item.label))); $('preview-action').value = catalog[0]?.id || '';
@@ -738,7 +763,22 @@ h3 { font-size: 13px; font-weight: 600; }
       applyState(result.state); fillPolicy(result.policy, result.actions);
     } catch (error) { showError(error); } finally { busy = false; render(); }
   }
-  function updatePolicyMode() { $('shell-warning').hidden = $('policy-mode').value !== 'approval'; }
+  const modeLabels={readonly:'纯读',approval:'执行 + 审批',god:'上帝模式',restricted:'已有受限策略'};
+  function updatePolicyMode() {
+    const mode=$('policy-mode').value, host=state.hosts.find(item=>item.id===policyRecord?.hostId);
+    $('shell-warning').hidden = mode !== 'approval';
+    $('mode-description').textContent = ({
+      readonly:'允许固定只读查询和已授权目录的读取。写入、启动、停止和原始 Shell 均禁止。',
+      approval:'固定只读查询按规则执行；变更和原始 Shell 需要逐次批准。',
+      god:'远程 Shell 使用 SSH 账号的全部权限，操作可直接执行。',
+      restricted:'保留升级前的固定操作和审批规则。选择新模式后保存即可切换。'
+    })[mode] || '';
+    $('god-warning').hidden = mode !== 'god';
+    $('protected-resources').hidden = mode === 'god';
+    $('god-ack-row').hidden = policyRecord?.policy.mode === 'god';
+    $('god-target').textContent = host ? '目标主机：'+(host.name || host.id)+' ('+host.id+') · '+(host.sshAlias || host.username+'@'+host.hostname+':'+host.port) : '';
+    if(mode!=='god') $('god-ack').checked=false;
+  }
   function updatePreview() {
     const kind = $('preview-kind').value;
     $('preview-action-fields').hidden = kind !== 'action'; $('preview-command-fields').hidden = kind !== 'command';
@@ -773,8 +813,13 @@ h3 { font-size: 13px; font-weight: 600; }
   $('policy-form').onsubmit = async event => {
     event.preventDefault(); if (!canEdit() || !policyRecord || !$('policy-form').reportValidity()) return;
     const args = { hostId: policyRecord.hostId, policy: draftPolicy(), expectedRevision: policyRecord.revision };
+    const elevate=args.policy.mode==='god' && policyRecord.policy.mode!=='god';
+    if (elevate) {
+      if (!$('god-ack').checked) { showError('请先确认目标主机和完整远程权限提醒。'); return; }
+      args.godAck={hostId:args.hostId,expectedRevision:args.expectedRevision,confirmed:true};
+    }
     let saved;
-    if (await mutate('ssh_policy_save', args, result => { saved = result.policy; })) {
+    if (await mutate('ssh_policy_save', args, result => { saved = result.policy; }, elevate?180000:undefined)) {
       if (saved?.hostId === args.hostId) fillPolicy(saved, actionCatalog); else showError(new Error('权限已提交，但未收到更新后的规则版本，请重新打开确认。'));
       $('sync-note').textContent = '权限已保存，旧授权已撤销；请重新授权后操作。';
     }
@@ -786,18 +831,34 @@ h3 { font-size: 13px; font-weight: 600; }
   }
   function collectionArgs(kind, append) {
     const args = {}, history = kind === 'history';
-    if ($(kind + '-host').value) args.hostId = $(kind + '-host').value;
+    if (history) {
+      if (historyHost !== '*') args.hostId = historyHost;
+      const session = $('history-session').value.trim();
+      if (session) args.sessionId = session;
+      const start = $('history-from').value, end = $('history-to').value;
+      if (start) args.fromMs = new Date(start + 'T00:00:00').getTime();
+      if (end) {
+        const exclusive = new Date(end + 'T00:00:00');
+        exclusive.setDate(exclusive.getDate() + 1);
+        args.toMs = exclusive.getTime();
+      }
+      if (start && end && args.fromMs >= args.toMs) throw new Error('开始日期不能晚于结束日期。');
+    } else if ($('audit-host').value) args.hostId = $('audit-host').value;
     const filter = $(history ? 'history-status' : 'audit-result').value; if (filter) args[history ? 'status' : 'result'] = filter;
     const cursor = history ? historyCursor : auditCursor; if (append && cursor !== null) args.beforeId = cursor;
     return args;
   }
   async function loadCollection(kind, append = false) {
+    if (kind === 'history' && (!historyHost || executionKind !== 'history')) return;
     const cursor = kind === 'history' ? historyCursor : auditCursor;
     if (!connected || !state.threadId || busy || (append && cursor === null)) return;
-    const sequence = ++collectionSequence, at = epoch, args = collectionArgs(kind, append); collectionLoading = true; renderGovernance();
+    const sequence = ++collectionSequence, at = epoch, thread=state.threadId;
+    if (kind === 'history' && !append) { historyItems = []; historyCursor = null; }
+    collectionLoading = true; renderGovernance();
     try {
+      const args = collectionArgs(kind, append);
       const result = await tool(kind === 'history' ? 'ssh_history_list' : 'ssh_audit_list', args);
-      if (sequence !== collectionSequence || at !== epoch || activeTab !== kind) return;
+      if (sequence !== collectionSequence || at !== epoch || activeTab !== kind || result.state.threadId !== thread || state.threadId !== thread) return;
       if (!Array.isArray(result.items)) throw new Error('未收到完整记录，请刷新重试。');
       applyState(result.state);
       if (kind === 'history') { historyItems = append ? [...historyItems, ...result.items.filter(item => !historyItems.some(previous => previous.id === item.id))] : result.items; historyCursor = result.nextCursor ?? null; }
@@ -822,7 +883,7 @@ h3 { font-size: 13px; font-weight: 600; }
     $('audit-empty').hidden = auditItems.length > 0; $('audit-empty').textContent = collectionLoading ? '正在加载审计记录…' : '暂无符合条件的记录。';
     $('audit-more').hidden = auditCursor === null; $('audit-more').disabled = collectionLoading || !canEdit();
   }
-  let historyItems = [], historyCursor = null, selectedHistoryId = null, historyEntry = null, historyLoading = false, historySequence = 0, historyLoadError = '', renderedHistoryEntry = null;
+  let historyHost = null, historyHostsSignature = '', historyItems = [], historyCursor = null, selectedHistoryId = null, historyEntry = null, historyLoading = false, historySequence = 0, historyLoadError = '', renderedHistoryEntry = null;
   async function openHistory(id) {
     if (!canEdit() || !Number.isInteger(id)) return;
     collectionSequence++; collectionLoading = false; selectedHistoryId = id; historyEntry = null; historyLoadError = ''; renderHistory();
@@ -830,10 +891,10 @@ h3 { font-size: 13px; font-weight: 600; }
   }
   async function loadHistoryDetail(id, silent = false) {
     if (!canEdit() || activeTab !== 'history' || selectedHistoryId !== id || (silent && historyLoading)) return;
-    const sequence = ++historySequence, at = epoch; historyLoading = true; historyLoadError = ''; renderHistory();
+    const sequence = ++historySequence, at = epoch, thread=state.threadId; historyLoading = true; historyLoadError = ''; renderHistory();
     try {
       const result = await tool('ssh_history_get', { historyId: id });
-      if (sequence !== historySequence || at !== epoch || activeTab !== 'history' || selectedHistoryId !== id) return;
+      if (sequence !== historySequence || at !== epoch || activeTab !== 'history' || selectedHistoryId !== id || result.state.threadId !== thread || state.threadId !== thread) return;
       if (result.entry?.id !== id) throw new Error('执行记录与请求不符，请重新打开。');
       applyState(result.state); historyEntry = result.entry;
       historyItems = historyItems.map(item => item.id === id ? { ...item, status: result.entry.status, finishedAt: result.entry.finishedAt, completionKnown: result.entry.completionKnown } : item);
@@ -846,15 +907,16 @@ h3 { font-size: 13px; font-weight: 600; }
     const target = $('history-detail-content');
     if (!historyEntry) { renderedHistoryEntry = null; target.replaceChildren(text('p', historyLoadError ? '读取未完成：' + historyLoadError : '正在读取执行详情…', 'loading-note')); return; }
     if (renderedHistoryEntry === historyEntry) return;
-    const entry = historyEntry, heading = text('div', '', 'event-top'); heading.append(text('h2', entry.summary || '执行详情', 'event-title'), text('span', statusLabels[entry.status] || entry.status, 'event-badge'));
+    const entry = historyEntry, heading = text('div', '', 'event-top'); heading.append(text('h2', entry.summary || '执行详情', 'event-title'), historyBadge(entry.status));
     const nodes = [heading];
     const purpose = text('section', '', 'history-purpose'); purpose.append(text('h3', '执行目的'), text('p', entry.explanation || '未提供执行目的。')); nodes.push(purpose);
+    const unapproved=entry.status==='not_approved';
     const host = entry.hostSnapshot || {}, address = host.sshAlias || (host.hostname ? (host.username ? host.username + '@' : '') + host.hostname + ':' + (host.port || 22) : '');
-    nodes.push(text('div', '主机：' + (host.name || entry.hostId) + (address ? ' · ' + address : '') + '\n聊天：' + (entry.threadId || '—') + '\n开始：' + timeLabel(entry.startedAt) + '\n结束：' + (entry.finishedAt ? timeLabel(entry.finishedAt) : '尚无完成时间') + '\n退出码：' + (entry.exitCode ?? '—') + '\n工作目录：' + (entry.cwd || '—') + '\n规则版本：' + (entry.policyRevision ?? '—'), 'history-metadata'));
+    nodes.push(text('div', '主机：' + (host.name || entry.hostId) + (address ? ' · ' + address : '') + '\n聊天：' + (entry.threadId || '—') + '\n会话：' + (entry.sessionId || '未记录') + (unapproved?'\n申请：':'\n开始：') + new Date(entry.startedAt).toLocaleString() + (unapproved?'\n决定：':'\n结束：') + (entry.finishedAt ? new Date(entry.finishedAt).toLocaleString() : '尚无完成时间') + '\n退出码：' + (entry.exitCode ?? '—') + '\n工作目录：' + (entry.cwd || '—') + '\n规则版本：' + (entry.policyRevision ?? '—'), 'history-metadata'));
     if (entry.status === 'running') nodes.push(text('p', '执行中，最终输出将在完成后显示。此页可见时自动刷新。', 'result-box'));
-    else if (entry.status === 'unknown' || entry.completionKnown === false) nodes.push(text('p', '完成状态未知，无法确认远端操作是否已经结束。', 'warning-note'));
+    else if (entry.status !== 'not_approved' && (entry.status === 'unknown' || entry.completionKnown === false)) nodes.push(text('p', '完成状态未知，无法确认远端操作是否已经结束。', 'warning-note'));
     if (entry.requestedCommand) nodes.push(outputBlock('原始请求命令', entry.requestedCommand));
-    if (entry.command) nodes.push(outputBlock('实际执行命令', entry.command));
+    if (entry.command) nodes.push(outputBlock(entry.status === 'not_approved' ? '拟执行命令（未执行）' : '实际执行命令', entry.command));
     if (!entry.requestedCommand && !entry.command) {
       const operation = entry.operationSnapshot || {}, lines = ['操作：' + ({ action: '固定操作', test: '连接测试', read: '读取文件', write: '写入文件', list: '列出目录', delete: '删除文件' }[operation.kind] || operation.kind || '未记录')];
       if (operation.actionId) lines.push('固定操作：' + operation.actionId);
@@ -865,6 +927,7 @@ h3 { font-size: 13px; font-weight: 600; }
     }
     if (entry.truncated) nodes.push(text('p', '原始输出超过保留上限，记录已截断。', 'warning-note'));
     if (entry.outputNotice) nodes.push(text('p', entry.outputNotice, 'result-box'));
+    if (entry.status === 'not_approved') { target.replaceChildren(...nodes); renderedHistoryEntry = entry; return; }
     if (entry.redacted) nodes.push(text('p', '敏感输出已隐藏，不展示标准输出和诊断输出。', 'protection-note'));
     else if (entry.status === 'running') nodes.push(outputBlock('运行输出', '等待执行完成后记录最终输出。'));
     else {
@@ -874,13 +937,43 @@ h3 { font-size: 13px; font-weight: 600; }
     }
     target.replaceChildren(...nodes); renderedHistoryEntry = entry;
   }
+  function selectHistoryHost(id) {
+    collectionSequence++; historySequence++; collectionLoading = historyLoading = false;
+    historyHost = id; selectedHistoryId = historyEntry = null; historyCursor = null; historyItems = [];
+    for (const key of ['history-from','history-to','history-session','history-status']) $(key).value = '';
+    clearError(); renderHistory();
+    if (historyHost) return loadCollection('history');
+  }
+  function historyBadge(status) {
+    const labels = {completed:'成功',not_approved:'未通过审批'};
+    const badge = text('span', labels[status] || statusLabels[status] || status,'event-badge');
+    badge.dataset.tone = ({completed:'success',failed:'failure',not_approved:'warning',timed_out:'failure',unknown:'warning'})[status] || 'neutral';
+    return badge;
+  }
   function renderHistory() {
-    $('history-list-view').hidden = executionKind !== 'history' || selectedHistoryId !== null; $('history-detail-view').hidden = executionKind !== 'history' || selectedHistoryId === null;
+    const home = executionKind === 'history' && !historyHost;
+    $('history-hosts-view').hidden = !home;
+    if (home) {
+      const signature = JSON.stringify([state.hosts,canEdit()]);
+      if (signature !== historyHostsSignature) {
+        $('history-hosts').replaceChildren(...state.hosts.map(host=>{
+          const button = text('button',''); button.type='button'; button.dataset.historyHost=host.id;
+          button.append(text('strong',host.name || host.id),text('span',host.id+' · '+(host.sshAlias || host.hostname)+(!host.enabled?' · 已停用':''),'hint'));
+          button.disabled=!canEdit(); button.onclick=()=>selectHistoryHost(host.id);
+          return button;
+        }));
+        historyHostsSignature = signature;
+      }
+    }
+    $('history-host-title').textContent = historyHost === '*' ? '全部执行历史' : (state.hosts.find(h=>h.id===historyHost)?.name || historyHost || '执行历史');
+    $('history-all').disabled = !canEdit();
+    $('history-list-view').hidden = executionKind !== 'history' || !historyHost || selectedHistoryId !== null; $('history-detail-view').hidden = executionKind !== 'history' || selectedHistoryId === null;
     $('refresh-history-detail').disabled = !canEdit() || historyLoading; $('history-back').disabled = busy;
     if (selectedHistoryId !== null) { renderHistoryDetail(); return; }
     $('history-list').replaceChildren(...historyItems.map(item => {
-      const card = text('article', '', 'event-card'), heading = text('div', '', 'event-top'); heading.append(text('div', item.summary || '执行记录', 'event-title'), text('span', statusLabels[item.status] || item.status, 'event-badge')); card.append(heading);
-      card.append(text('p', item.explanation || '未提供执行目的。'), text('div', timeLabel(item.startedAt) + ' · ' + item.hostId + ' · #' + item.id, 'event-meta'));
+      const card = text('article', '', 'event-card'), heading = text('div', '', 'event-top'); heading.append(text('div', item.summary || '执行记录', 'event-title'), historyBadge(item.status)); card.append(heading);
+      card.append(text('p', item.explanation || '未提供执行目的。'), text('div', new Date(item.startedAt).toLocaleString() + ' · ' + item.hostId + ' · #' + item.id, 'event-meta'));
+      card.append(text('div', '聊天：' + item.threadId + ' · 会话：' + (item.sessionId || '未记录'), 'event-meta'));
       if (item.redacted || item.truncated) card.append(text('div', [item.redacted ? '敏感输出已隐藏' : '', item.truncated ? '输出已截断' : ''].filter(Boolean).join(' · '), 'event-meta'));
       const button = text('button', '查看执行详情', 'small'); button.type = 'button'; button.dataset.historyId = String(item.id); button.disabled = !canEdit(); button.onclick = () => openHistory(item.id); card.append(button); return card;
     }));
@@ -888,24 +981,28 @@ h3 { font-size: 13px; font-weight: 600; }
     $('history-more').hidden = historyCursor === null; $('history-more').disabled = !canEdit() || collectionLoading;
   }
   $('history-back').onclick = historyBack; $('refresh-history-detail').onclick = () => selectedHistoryId !== null && loadHistoryDetail(selectedHistoryId);
-  $('refresh-history').onclick = () => loadCollection('history'); $('history-host').onchange = $('history-status').onchange = () => loadCollection('history'); $('history-more').onclick = () => loadCollection('history', true);
+  $('history-all').onclick=()=>selectHistoryHost('*');
+  $('history-host-back').onclick=()=>selectHistoryHost(null);
+  for (const id of ['history-from','history-to','history-session','history-status']) $(id).onchange=()=>loadCollection('history');
+  $('refresh-history').onclick = () => loadCollection('history'); $('history-more').onclick = () => loadCollection('history', true);
 
   function renderGovernance() {
     for (const tab of ['hosts', 'audit', 'history']) { $('tab-' + tab).setAttribute('aria-selected', String(activeTab === tab)); $('tab-' + tab).disabled = busy; $(tab + '-view').hidden = activeTab !== tab; }
-    fillHostFilter('audit-host'); fillHostFilter('history-host'); renderHostDetail();
+    fillHostFilter('audit-host'); fillHostFilter('archive-host'); renderHostDetail();
     for (const id of ['save-policy', 'preview-run', 'add-root', 'add-blocked', 'add-command-rule', 'grant-minutes']) $(id).disabled = !canEdit();
-    for (const id of ['policy-mode', 'policy-grant', 'policy-timeout', 'policy-concurrent', 'policy-output', 'preview-kind', 'preview-action', 'preview-command', 'preview-cwd', 'preview-path', 'preview-content']) $(id).disabled = !canEdit();
+    for (const id of ['god-ack','policy-mode', 'policy-grant', 'policy-timeout', 'policy-concurrent', 'policy-output', 'preview-kind', 'preview-action', 'preview-command', 'preview-cwd', 'preview-path', 'preview-content']) $(id).disabled = !canEdit();
     const disableRow = el => { if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) el.disabled = !canEdit(); for (const child of el.children || []) disableRow(child); };
     for (const row of [...rootRows, ...localRootRows, ...blockedRows, ...commandRows]) disableRow(row.el);
     disableRow($('infrastructure-policy')); $('add-local-root').disabled = !canEdit();
     for (const row of actionRows) { row.control.disabled = !canEdit(); if(row.names) { row.names.disabled = !canEdit(); row.restrict.disabled = !canEdit(); } } for (const row of parameterRows) row.input.disabled = !canEdit();
     for (const id of ['cancel-policy']) $(id).disabled = busy;
-    for (const id of ['refresh-audit', 'audit-host', 'audit-result', 'refresh-history', 'history-host', 'history-status']) $(id).disabled = !canEdit() || collectionLoading;
+    for (const id of ['refresh-audit', 'audit-host', 'audit-result', 'refresh-history', 'history-status']) $(id).disabled = !canEdit() || collectionLoading;
     if (policyRecord) {
       const current = state.policies.find(item => item.hostId === policyRecord.hostId);
       if (current && current.revision !== policyRecord.revision) $('policy-revision').textContent = '已有更新版本，草稿已保留。请还原权限设置后重新修改并保存。';
       const exists = state.hosts.some(host => host.id === policyRecord.hostId); if (!exists) { $('save-policy').disabled = true; $('preview-run').disabled = true; $('policy-revision').textContent = '该主机已删除；草稿未提交。'; }
     }
+    if ($('lifecycle-panel').open) archiveControls();
     if (activeTab === 'audit') renderAudit(); if (activeTab === 'history') { renderHistory(); renderInfrastructure(); }
   }
   $('tab-hosts').onclick = () => selectTab('hosts'); $('tab-audit').onclick = () => selectTab('audit'); $('tab-history').onclick = () => selectTab('history');
@@ -1065,6 +1162,11 @@ h3 { font-size: 13px; font-weight: 600; }
     $('infrastructure-more').hidden=detail || infrastructureCursor===null;$('infrastructure-more').disabled=!canEdit() || infrastructureLoading;
     if(!detail){$('infrastructure-list').replaceChildren(...infrastructureItems.map(item=>{const card=text('article','','event-card');const title=executionKind==='jobs'?(item.summary || item.operation?.command || '远程任务'):(item.direction==='upload'?'上传':'下载')+' · '+(item.remotePath || item.id);card.append(text('div',title,'event-title'),text('p',(infrastructureLabels[item.status] || item.status)+' · '+item.hostId),text('p',item.id,'event-meta'));const button=text('button','查看运行详情','small');button.type='button';button.dataset[executionKind==='jobs'?'taskId':'transferId']=item.id;button.disabled=!canEdit() || infrastructureLoading;button.onclick=()=>{infrastructureSelected=item.id;infrastructureEntry=null;infrastructureOutput='';return readInfrastructure();};card.append(button);return card;}));if(!infrastructureItems.length)$('infrastructure-list').append(text('p',infrastructureLoading?'正在读取运行记录…':'暂无运行记录。','hint'));}
     const controlsEnabled=canEdit()&&!infrastructureLoading&&entry&&activeGrant(entry.hostId)&&state.hosts.find(host=>host.id===entry.hostId)?.enabled;
+    const storageKey=detail ? [state.threadId,executionKind,infrastructureSelected].join('/') : '';
+    const measured=$('infrastructure-storage-result');
+    if(measured.dataset.record!==storageKey){measured.hidden=true; measured.dataset.record=storageKey; measured.textContent='';}
+    $('infrastructure-storage').hidden=!detail || !entry;
+    $('infrastructure-storage').disabled=!controlsEnabled || measuringInfrastructure;
     $('infrastructure-grant-note').hidden=!detail || !entry || Boolean(controlsEnabled) || busy || infrastructureLoading;
     for(const id of ['infrastructure-reconcile','infrastructure-resume','infrastructure-cancel'])$(id).disabled=!controlsEnabled;
     $('infrastructure-reconcile').hidden=!detail || executionKind!=='jobs';$('infrastructure-resume').hidden=!detail || executionKind!=='transfers' || !entry || !['interrupted','unknown','failed','stopped','commit_unknown'].includes(entry.status);
@@ -1077,6 +1179,82 @@ h3 { font-size: 13px; font-weight: 600; }
   $('infrastructure-back').onclick=()=>{if(busy)return;infrastructureSequence++;infrastructureLoading=false;infrastructureSelected=null;infrastructureEntry=null;renderInfrastructure();};
   $('infrastructure-cancel').onclick=()=>controlInfrastructure('cancel');$('infrastructure-resume').onclick=()=>controlInfrastructure('resume');$('infrastructure-reconcile').onclick=()=>controlInfrastructure('reconcile');
 
+  let archiveSequence=0, archiveCursor=null, archiveItems=[], archiveBusy=false, archiveButtons=[], measuringInfrastructure=false;
+  $('infrastructure-storage').onclick=async()=>{
+    const entry=infrastructureEntry, box=$('infrastructure-storage-result'), key=box.dataset.record;
+    if(!canEdit() || !entry || measuringInfrastructure || !activeGrant(entry.hostId))return;
+    measuringInfrastructure=true; renderInfrastructure();
+    try{
+      const data=await tool('ssh_lifecycle_inspect',{hostId:entry.hostId,kind:executionKind==='jobs'?'job':'transfer',id:entry.id,explanation:'测量所选记录的远端私有文件占用：'+entry.id});
+      if(box.dataset.record===key){box.textContent='远端私有文件 '+formatBytes(data.measurement.bytes);box.hidden=false;}
+    }catch(error){showError(error);}finally{measuringInfrastructure=false;renderInfrastructure();}
+  };
+  function formatBytes(n){
+    if(!Number.isFinite(n))return '未测量';
+    if(n<1024)return n+' B';
+    if(n<1048576)return (n/1024).toFixed(1)+' KiB';
+    return (n/1048576).toFixed(1)+' MiB';
+  }
+  function archiveControls() {
+    for(const {item,button} of archiveButtons)button.disabled=!canEdit() || archiveBusy || item.remoteCleaned || item.threadId!==state.threadId || !activeGrant(item.hostId) || !state.hosts.find(host=>host.id===item.hostId)?.enabled;
+    for(const id of ['storage-refresh','retention-save','archive-sweep','archive-more','retention-days','archive-host']) $(id).disabled=!canEdit() || archiveBusy;
+  }
+  function renderArchives() {
+    const panel=$('archive-list');archiveButtons=[];
+    panel.replaceChildren(...archiveItems.map(item=>{
+      const card=text('article','','event-card');
+      card.append(text('strong',item.summary || item.id),text('p',(item.kind==='job'?'任务':'传输')+' · '+item.hostId+' · '+(statusLabels[item.status] || item.status)),text('div','聊天：'+item.threadId+' · 会话：'+(item.sessionId || '未记录')+' · '+new Date(item.archivedAt).toLocaleString(),'event-meta'));
+      const result=text('div',item.remoteCleaned?'私有状态已处理':'远端占用尚未测量','hint'); card.append(result);
+      if(!item.remoteCleaned && item.threadId===state.threadId && activeGrant(item.hostId) && state.hosts.find(host=>host.id===item.hostId)?.enabled) {
+        for(const collect of [false,true]) {
+          const button=text('button',collect?'回收私有状态':'测量远端占用',collect?'small danger':'small');
+          archiveButtons.push({item,button}); button.disabled=!canEdit() || archiveBusy;
+          button.onclick=async()=>{
+            if(!canEdit() || archiveBusy || item.threadId!==state.threadId || !activeGrant(item.hostId))return;
+            archiveBusy=true; archiveControls();
+            try {
+              const data=await tool(collect?'ssh_lifecycle_collect':'ssh_lifecycle_inspect',{hostId:item.hostId,kind:item.kind,id:item.id,
+                explanation:(collect?'在原聊天核验并回收已归档记录的私有状态，保留发布制品：':'核验此记录的远端私有状态占用：')+item.id},180000);
+              const stats=data.measurement;
+              result.textContent='远端私有文件 '+formatBytes(stats.bytes)+' · 已回收 '+formatBytes(stats.reclaimedBytes)+' · 保留 '+formatBytes(stats.retainedBytes);
+              if(collect && stats.collected) {item.remoteCleaned=true; button.disabled=true;}
+            } catch(error){showError(error);} finally {archiveBusy=false;archiveControls();}
+          };
+          card.append(button);
+        }
+      }
+      return card;
+    }));
+    if(!archiveItems.length)panel.append(text('p','暂无归档记录。','hint'));
+    $('archive-more').hidden=archiveCursor===null;
+  }
+  async function loadStorage(append=false) {
+    if(!canEdit() || archiveBusy || !$('lifecycle-panel').open)return;
+    archiveBusy=true;archiveControls();
+    const seq=++archiveSequence, thread=state.threadId;
+    try {
+      const filterHost=$('archive-host').value;
+      const data=await tool('ssh_lifecycle_overview',{...(append?{cursor:archiveCursor}:{}),...(filterHost?{hostId:filterHost}:{})});
+      if(seq!==archiveSequence || thread!==data.state.threadId || thread!==state.threadId)return;
+      const o=data.overview, local=o.local;
+      $('storage-summary').replaceChildren(text('p','本地数据库 '+formatBytes(local.databaseBytes)+' · 可复用空间 '+formatBytes(local.reusableDatabaseBytes)),
+        text('p','保留任务日志 '+formatBytes(local.outputBytes)+' · 未归档 '+local.activeRecords+' · 已归档 '+local.archivedRecords+' · 受保护 '+local.protectedRecords,'hint'));
+      if(data.lastSweepError)$('storage-summary').append(text('p','上次自动归档未完成：'+data.lastSweepError,'warning-note'));
+      if(!append)$('retention-days').value=String(o.retentionDays);
+      archiveItems=append?[...archiveItems,...data.archive.items]:data.archive.items;archiveCursor=data.archive.nextCursor;
+    } catch(error){showError(error);} finally {archiveBusy=false; archiveControls();renderArchives();}
+  }
+  $('lifecycle-panel').ontoggle=()=>{if($('lifecycle-panel').open)loadStorage();};
+  $('archive-more').onclick=()=>loadStorage(true);$('storage-refresh').onclick=()=>loadStorage();
+  $('archive-host').onchange=()=>{archiveItems=[];archiveCursor=null;renderArchives();return loadStorage();};
+  async function storageChange(name,args){
+    if(!canEdit() || archiveBusy)return;
+    archiveBusy=true;archiveControls();
+    try{await tool(name,args);}catch(error){showError(error);return;}finally{archiveBusy=false;archiveControls();}
+    await loadStorage();
+  }
+  $('retention-save').onclick=()=>{if($('retention-days').reportValidity())return storageChange('ssh_lifecycle_configure',{retentionDays:Number($('retention-days').value)});};
+  $('archive-sweep').onclick=()=>storageChange('ssh_lifecycle_sweep',{});
   function hostStyle(context) {
     if (context?.theme === 'light' || context?.theme === 'dark') {
       document.documentElement.dataset.theme = context.theme;
@@ -1107,7 +1285,7 @@ h3 { font-size: 13px; font-weight: 600; }
     render();
     try {
       if (window.parent === window) throw new Error('请从 Codex 聊天中打开 SSH 主机面板。');
-      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.4.6' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
+      const result = await request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'codex-ssh-control', version: '0.5.0' }, appCapabilities: { availableDisplayModes: ['fullscreen', 'inline'] } });
       hostStyle(result.hostContext); notify('ui/notifications/initialized'); connected = true; controls();
       await refresh();
       timer = setInterval(() => { if (!document.hidden) refresh(true); }, 5000);

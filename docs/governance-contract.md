@@ -1,5 +1,7 @@
 # codex-ssh-control permission governance contract
 
+0.5 presets: newly inserted hosts use readonly, which denies all mutations and arbitrary shell. Existing restricted/approval policies retain their semantics. Explicit app-only, host- and revision-bound native confirmation can select god, which allows arbitrary remote shell without per-command approval and ignores host command deny rules. SSH authentication, expiring chat grants, auditing, recognized output redaction, local artifact confinement and lifecycle fences remain enforced. The ordinary-mode rules below describe behavior outside god.
+
 User requirement: visual configuration, no JSON editing. Non-sensitive reads/status can run automatically; writes, modifications, start/stop/restart/delete require native confirmation; secrets/security resources denied. Reference Netcatty commit 8043178d54599b97bcfe8143f8df5c722d99b7f6 for design only; no copied source. The current operation confirmation and history contract is [interaction-history-contract.md](interaction-history-contract.md).
 
 ## Runtime scope

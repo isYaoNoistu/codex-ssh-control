@@ -3,6 +3,12 @@ export function infrastructureDefinitions(tool) {
   const list={cursor:number,limit:{type:'integer',minimum:1,maximum:100}};
   const task={taskId:str},transfer={transferId:str};
   return [
+    tool('ssh_lifecycle_overview','存储与归档','侧栏：统计本地持久记录和占用，分页查看归档。',{...list,hostId},[],{app:true,read:true}),
+    tool('ssh_lifecycle_configure','保存保留策略','侧栏：设置已确认终态的本地记录保留天数。',{retentionDays:{type:'integer',minimum:1,maximum:3650}},['retentionDays'],{app:true}),
+    tool('ssh_lifecycle_sweep','按策略归档','侧栏：检查到期且无恢复活动的本地任务和传输。',{},[],{app:true}),
+    ...['inspect','collect'].map(action => tool('ssh_lifecycle_'+action,action==='inspect'?'核实远端占用':'回收远端私有状态',
+      '侧栏：仅针对当前聊天已授权主机上的指定记录，回收需要原生确认。',
+      {hostId,kind:{type:'string',enum:['job','transfer']},id:str,explanation},['hostId','kind','id','explanation'],{app:true,read:action==='inspect'})),
     tool('ssh_host_key_scan','获取主机公钥候选','用户侧栏：仅扫描直接可达地址的公钥候选，不建立信任。内网主机可从控制台粘贴公钥。',{hostId,hopIndex:{type:'integer',minimum:-1,maximum:7}},['hostId'],{app:true,read:true}),
     tool('ssh_host_keys_confirm','确认主机指纹','用户核对外部渠道的SHA256指纹后固定公钥；变化会撤销旧授权。',{hostId,hopIndex:{type:'integer',minimum:-1,maximum:7},candidates:{type:'array',items:str,maxItems:16},fingerprints:{type:'array',items:str,maxItems:16},expectedCurrentFingerprints:{type:'array',items:str,maxItems:16},confirmed:{type:'boolean'}},['hostId','candidates','fingerprints','expectedCurrentFingerprints','confirmed'],{app:true}),
     tool('ssh_capabilities','检查主机能力','读取Linux、Python、路径保护和执行条件；不安装软件。',{hostId},['hostId'],{read:true}),

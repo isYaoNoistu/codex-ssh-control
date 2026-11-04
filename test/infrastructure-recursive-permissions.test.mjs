@@ -14,7 +14,7 @@ test('recursive planning refuses a more-specific unreadable local directory befo
   try{
     store.saveHost({id:'fixture',sshAlias:'no-network.invalid',enabled:true});
     const initial=store.getPolicy('fixture');
-    store.savePolicy('owner','fixture',{...initial.policy,
+    store.savePolicy('owner','fixture',{...initial.policy,mode:'restricted',
       roots:[{id:'remote',path:'/srv/artifacts',read:true,write:true}],
       localRoots:[{id:'all',path:local,read:true,write:true},{id:'private',path:join(local,'private'),read:false,write:false}],
       transfers:{enabled:true},

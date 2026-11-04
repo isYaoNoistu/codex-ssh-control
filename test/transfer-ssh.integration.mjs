@@ -27,7 +27,9 @@ test('real SSH interrupted binary upload resumes then downloads with final hash'
   const upload=await service.prepare(request);await service.start({threadId:request.threadId,planId:upload.planId});const stopped=await service.wait({threadId:request.threadId,transferId:upload.planId});assert.equal(stopped.status,'interrupted',stopped.error);assert.ok(interrupted);
   await service.resume({threadId:request.threadId,transferId:upload.planId});const finished=await service.wait({threadId:request.threadId,transferId:upload.planId});assert.equal(finished.status,'completed',finished.error);assert.equal(writes,2);
   const download=await service.prepare({...request,direction:'download',localPath:path.join(fixture.dir,'download.bin')});assert.equal(download.sha256,upload.sha256);await service.start({threadId:request.threadId,planId:download.planId});const downloaded=await service.wait({threadId:request.threadId,transferId:download.planId});assert.equal(downloaded.status,'completed',downloaded.error);assert.equal((await fs.stat(download.localPath)).size,size);
-  await service.cleanup({threadId:request.threadId,transferId:upload.planId});
+  await service.cleanup({threadId:request.threadId,transferId:upload.planId},r=>{
+   assert.equal(r.remoteRoot,request.remoteRoot);assert.equal(r.localRoot,request.localRoot);return r;
+  });
   const tree=path.join(fixture.dir,'tree-source');await fs.mkdir(path.join(tree,'nested'),{recursive:true});await fs.writeFile(path.join(tree,'nested','leaf.bin'),Buffer.from([0,255,1]));
   for(const direction of ['upload','download']){
    const manifest=await service.planManifest({...request,direction,localPath:direction==='upload'?tree:path.join(fixture.dir,'tree-download'),remotePath:'/tmp/artifact-tree',maxEntries:8});

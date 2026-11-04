@@ -19,6 +19,8 @@ function fixture(t) {
   const open = () => { const store = new Store(directory); stores.push(store); return store; };
   const store = open();
   store.saveHost({ id: 'prod', name: '测试主机', hostname: 'prod.example.test', username: 'deploy', identityFile: '/not-a-real-key', enabled: true });
+  const initial = store.getPolicy('prod');
+  store.savePolicy('user', 'prod', { ...initial.policy, mode: 'restricted' }, initial.revision);
   store.grant('chat', ['prod']);
   t.after(() => { for (const s of stores) s.close(); rmSync(directory, { recursive: true, force: true }); });
   return { store, directory, open };
@@ -52,7 +54,7 @@ test('native calls need exact independent confirmation tickets and never return 
   assert.equal(store.completeNativeApproval('chat', a.result.approval.id, a.token, 'approve').status, 'denied');
   assert.equal(store.completeNativeApproval('chat', b.result.approval.id, b.token, 'deny').status, 'denied');
   assert.equal(store.completeNativeApproval('chat', b.result.approval.id, b.token, 'approve').status, 'denied');
-  assert.equal(store.listHistory().items.length, 1);
+  assert.deepEqual(store.listHistory().items.map(x=>x.status), ['not_approved','running']);
 });
 
 test('legacy approval methods cannot resolve or consume native tickets with the same digest', t => {
@@ -78,7 +80,7 @@ test('explanations are normalized and bound to the exact immutable approval requ
   assert.ok(safe.result.presentation.explanation);
 });
 
-test('decline, cancel, expiration, revoked grants and changed policy never create execution history', t => {
+test('decline, cancel, expiration, revoked grants and changed policy create only unexecuted proposal records', t => {
   const { store } = fixture(t);
   for (const decision of ['deny', 'cancel']) {
     const a = begin(store);
@@ -95,7 +97,9 @@ test('decline, cancel, expiration, revoked grants and changed policy never creat
   const changed = begin(store);
   grantPolicy(store, { timeoutSeconds: 10 });
   assert.equal(store.completeNativeApproval('chat', changed.result.approval.id, changed.token, 'approve').status, 'denied');
-  assert.equal(store.listHistory().items.length, 0);
+  const history = store.listHistory().items;
+  assert.deepEqual(history.map(x=>x.approvalOutcome), ['invalidated','invalidated','expired','cancelled','declined']);
+  assert.ok(history.every(row => row.status === 'not_approved' && row.exitCode === null));
 });
 
 test('native pending limit is per host/thread and cancelled tickets free capacity without leasing', t => {
@@ -107,7 +111,42 @@ test('native pending limit is per host/thread and cancelled tickets free capacit
   assert.equal(begin(store, mutation, explanation, randomUUID(), 'other').result.status, 'pending');
   store.completeNativeApproval('chat', tickets[0].result.approval.id, tickets[0].token, 'cancel');
   assert.equal(begin(store).result.status, 'pending');
-  assert.equal(store.listHistory().items.length, 0);
+  assert.deepEqual(store.listHistory().items.map(x=>x.approvalOutcome), ['cancelled']);
+});
+
+test('declined and expired pre-upgrade proposals retain safe metadata without credential values', t => {
+  const { store, directory } = fixture(t);
+  grantPolicy(store, { mode: 'approval' });
+  const db = new DatabaseSync(join(directory, 'store.sqlite'));
+  try {
+    for (const outcome of ['declined', 'expired']) {
+      const probe = begin(store, { kind: 'command', command: 'echo probe' }, '检查运行参数');
+      const id = probe.result.approval.id;
+      // A previous server accepted these proposals before the credential detector was upgraded.
+      const value = outcome === 'declined' ? 'synthetic-password' : 'ghp_' + 'a'.repeat(36);
+      const envToken = 'glpat-' + 'b'.repeat(20);
+      const command = outcome === 'declined' ? 'mysql --password=' + value : 'printf %s ' + value;
+      const presentation = {...probe.result.approval.presentation, requestedCommand: command, command,
+        explanation: outcome === 'expired' ? 'Inspect ' + value : '检查运行参数'};
+      presentation.operation = outcome === 'declined' ? {kind:'command', command, cwd:''} :
+        {kind:'job', command, env:{BUILD_LABEL:envToken}, cwd:'/', shell:'/bin/sh',
+          disconnectPolicy:'continue', timeoutSeconds:60, maxOutputBytes:8192};
+      db.prepare('UPDATE approvals SET operation=?,presentation=?,explanation=?,expires_at=?,session_id=? WHERE id=?')
+        .run(JSON.stringify(presentation.operation), JSON.stringify(presentation), presentation.explanation,
+          outcome === 'expired' ? Date.now() - 1 : Date.now() + 120000, 'test-session', id);
+      if (outcome === 'declined') store.completeNativeApproval('chat', id, probe.token, 'deny');
+      const [latest] = store.listHistory({status:'not_approved'}).items;
+      const detail = store.getHistory(latest.id);
+      assert.equal(detail.approvalOutcome, outcome);
+      assert.equal(detail.sessionId, 'test-session');
+      assert.equal(detail.stdout, '');
+      assert.equal(detail.stderr, '');
+      assert.ok(!JSON.stringify(detail).includes(value));
+      assert.ok(!JSON.stringify(detail).includes(envToken));
+      assert.equal(detail.operationSnapshot.kind, presentation.operation.kind);
+      assert.equal(db.prepare('SELECT operation FROM approvals WHERE id=?').get(id).operation, '{}');
+    }
+  } finally { db.close(); }
 });
 
 test('native approval rechecks concurrency and terminally invalidates a busy acceptance', t => {
@@ -137,6 +176,41 @@ test('history survives reopening and lists omit full commands and output bodies'
   const list = store.listHistory().items[0];
   for (const field of ['stdout', 'stderr', 'command', 'requestedCommand', 'operationSnapshot', 'hostSnapshot']) assert.equal(field in list, false, field);
   assert.ok(!JSON.stringify(store.listAudit()).includes('fixture-output-body'));
+});
+
+test('host history filters use half-open time bounds and preserve the originating session after a declined file request', t => {
+  const { store, open } = fixture(t);
+  grantPolicy(store, { roots: [{ id: 'app', path: '/srv/app', read: true, write: true }] });
+  store.grant('other-chat', ['prod']);
+  const time = Date.now();
+  let clock = time;
+  t.mock.method(Date, 'now', () => clock);
+  const revision = store.getPolicy('prod').revision;
+  for (const [thread, session] of [['chat', 'session-a'], ['other-chat', 'session-b']]) {
+    const ready = store.beginNativeOperation(thread, 'prod', read, '', randomUUID(), revision, session);
+    store.finishOperation(ready.operationId, { status: 'completed' });
+    clock++;
+  }
+  const token = randomUUID(), content = 'file body must not be retained in denied history';
+  const pending = store.beginNativeOperation('chat', 'prod', { kind: 'write', path: '/srv/app/file', content }, '申请更新应用文件', token, revision, 'session-a');
+  store.completeNativeApproval('chat', pending.approval.id, token, 'deny');
+  store.completeNativeApproval('chat', pending.approval.id, token, 'approve');
+  const db = open(), range = { hostId: 'prod', sessionId: 'session-a', fromMs: time, toMs: time + 3, limit: 1 };
+  const first = db.listHistory(range);
+  assert.equal(first.items[0].status, 'not_approved');
+  assert.equal(first.items[0].sessionId, 'session-a');
+  assert.equal(first.items[0].threadId, 'chat');
+  assert.equal(first.items[0].approvalOutcome, 'declined');
+  const detail = db.getHistory(first.items[0].id);
+  assert.equal(detail.exitCode, null); assert.equal(detail.stdout, ''); assert.equal(detail.stderr, '');
+  assert.ok(!JSON.stringify(detail).includes(content)); assert.equal(detail.operationSnapshot.bytes, Buffer.byteLength(content));
+  const second = db.listHistory({ ...range, beforeId: first.nextCursor });
+  assert.equal(second.items[0].status, 'completed'); assert.equal(second.nextCursor, null);
+  assert.equal(db.listHistory({ ...range, status: 'cancelled' }).items.length, 0);
+  assert.equal(db.listHistory({ ...range, toMs: clock }).items[0].status, 'completed');
+  assert.equal(db.listHistory({ ...range, hostId: 'elsewhere' }).items.length, 0);
+  for (const invalid of [{ fromMs: -1 }, { toMs: 'now' }, { fromMs: time, toMs: time }])
+    assert.throws(() => db.listHistory(invalid), /时间/);
 });
 
 test('history removes write body and never persists recognized sensitive output', t => {
@@ -279,7 +353,7 @@ test('schema 3 migration invalidates legacy approvals without inventing unavaila
   assert.deepEqual(reopened.state('chat').grantedHostIds, ['prod']);
   assert.equal(reopened.listHistory().items.length, 0);
   const versionDb = new DatabaseSync(join(directory, 'store.sqlite'));
-  try { assert.equal(versionDb.prepare('PRAGMA user_version').get().user_version, 5); } finally { versionDb.close(); }
+  try { assert.equal(versionDb.prepare('PRAGMA user_version').get().user_version, 6); } finally { versionDb.close(); }
 });
 
 test('native nonces cannot be reused and new authorization cannot revive cancelled exact tickets', t => {

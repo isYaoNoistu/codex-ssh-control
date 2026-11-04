@@ -85,15 +85,21 @@ def rename_noreplace(srcdir,src,dstdir,dst):
 def write_all(fd,data):
  while data:
   count=os.write(fd,data);data=data[count:]
-def committed_receipt(parent,req,cleanup=False):
+def checked_stage_name(req, target, root, blocked):
+ token=req.get('token','')
+ if not isinstance(token,str) or not re.fullmatch('[a-f0-9]{64}',token):raise Denied('invalid transfer token')
+ name='.ssh-transfer-'+token
+ stage=os.path.join(os.path.dirname(target),name)
+ private_paths=(stage,os.path.join(stage,'data'),os.path.join(stage,'identity.json'))
+ if not within(stage,root) or any(protected(p,blocked) for p in private_paths):
+  raise Denied('protected transfer staging path')
+ return name
+def committed_receipt(parent,req,name):
  """The pre-rename durable inode record also resolves a lost commit response.
 
  No success inference from content alone: exact staged inode and contract must
  now be present at the target. Retain the tiny receipt until explicit cleanup.
  """
- token=req.get('token','')
- if not re.fullmatch('[a-f0-9]{64}',token):raise Denied('invalid transfer token')
- name='.ssh-transfer-'+token
  try:directory=openat2(parent,name,os.O_RDONLY|os.O_DIRECTORY)
  except FileNotFoundError:return None
  try:
@@ -116,14 +122,11 @@ def committed_receipt(parent,req,cleanup=False):
    snap=snapshot(fd)
    if identity(regular(fd))!=record.get('file') or snap['size']!=req['size'] or snap['sha256']!=req['sha256']:raise Denied('committed target identity mismatch')
   finally:os.close(fd)
-  if cleanup:os.unlink('identity.json',dir_fd=directory);os.rmdir(name,dir_fd=parent)
-  return {'committed':True,'offset':req['size'],'cleaned':cleanup}
+  return {'committed':True,'offset':req['size'],'cleaned':False}
  finally:os.close(directory)
-def stage_open(parent,req,create=False):
- token=req.get('token','')
- if not re.fullmatch('[a-f0-9]{64}',token):raise Denied('invalid transfer token')
- name='.ssh-transfer-'+token
+def stage_open(parent,req,name,create=False):
  if create:
+  expired(req)
   try:os.mkdir(name,0o700,dir_fd=parent)
   except FileExistsError:pass
  directory=openat2(parent,name,os.O_RDONLY|os.O_DIRECTORY)
@@ -159,6 +162,82 @@ def stage_open(parent,req,create=False):
   except BaseException:os.close(fd);raise
   return directory,fd,name
  except BaseException:os.close(directory);raise
+
+def private_storage(parent, req, name, collect):
+ """Measure only identified staging files. Never unlink the publication path."""
+ status=req.get('expectedStatus')
+ if collect:
+  if status not in ('completed','cancelled'):raise Denied('unconfirmed transfer terminal state')
+  lease=req.get('originalExpiresAt')
+  # A positively verified publication can still finish its explicit cleanup
+  # immediately. Automatic GC and cancelled uploads wait out any delayed writes.
+  if (req['operation']=='collect' or status=='cancelled') and (
+      type(lease) not in (float,int) or not 0<lease<=time.time()*1000):
+   raise Denied('transfer lease is still active or not known')
+  # A writable parent owned by another principal can swap names before rmdir.
+  ps=os.fstat(parent)
+  if ps.st_uid not in (0,os.geteuid()) or (ps.st_mode&0o022 and not ps.st_mode&stat.S_ISVTX):
+   raise Denied('staging parent does not protect directory ownership')
+ try:directory=openat2(parent,name,os.O_RDONLY|os.O_DIRECTORY)
+ except FileNotFoundError:
+  if collect:raise Denied('private staging state missing; ownership and terminal outcome cannot be verified')
+  return {'missing':True,'bytes':0,'retainedBytes':0,'reclaimedBytes':0,'collected':False}
+ try:
+  ds=os.fstat(directory)
+  if ds.st_uid!=os.geteuid() or stat.S_IMODE(ds.st_mode)!=0o700:raise Denied('unsafe staging directory')
+  fcntl.flock(directory,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  entries=set(os.listdir(directory))
+  if 'identity.json' not in entries or entries-{'identity.json','data'}:
+   raise Denied('incomplete or unexpected staging entries; retaining state')
+  meta=openat2(directory,'identity.json',os.O_RDONLY|os.O_NONBLOCK)
+  try:
+   ms=regular(meta)
+   if ms.st_uid!=os.geteuid() or stat.S_IMODE(ms.st_mode)!=0o600 or ms.st_size>8192:
+    raise Denied('invalid staging metadata')
+   record=json.loads(os.read(meta,8193))
+  finally:os.close(meta)
+  contract={k:req[k] for k in ('path','root','token','size','sha256','mode','mtimeNs','overwrite')}
+  if record.get('contract')!=contract or record.get('directory')!=identity(ds):
+   raise Denied('staging contract/identity mismatch')
+  artifacts={'identity.json':ms}
+  if 'data' in entries:
+   fd=openat2(directory,'data',os.O_RDONLY|os.O_NONBLOCK)
+   try:
+    s=regular(fd);no_xattr(fd)
+    if identity(s)!=record.get('file') or s.st_uid!=os.geteuid() or s.st_size>req['size']:
+     raise Denied('staging file identity mismatch')
+    artifacts['data']=s
+   finally:os.close(fd)
+   if collect and status!='cancelled':raise Denied('transfer publication not confirmed')
+  elif collect:
+   if status!='completed':raise Denied('possible unknown publication; retaining receipt')
+   # Verify publication with the receipt while holding the same stage lock.
+   # The destination is opened read-only and never included in the unlink set.
+   fd=openat2(parent,os.path.basename(req['path']),os.O_RDONLY|os.O_NONBLOCK)
+   try:
+    snap=snapshot(fd)
+    if identity(regular(fd))!=record.get('file') or snap['size']!=req['size'] or snap['sha256']!=req['sha256']:
+     raise Denied('committed target identity mismatch')
+   finally:os.close(fd)
+  total=sum(s.st_size for s in artifacts.values())
+  if collect:
+   expired(req)
+   if not os.path.samestat(os.stat(name,dir_fd=parent,follow_symlinks=False),ds):
+    raise Denied('staging directory identity changed')
+   for entry,s in artifacts.items():
+    if not os.path.samestat(os.stat(entry,dir_fd=directory,follow_symlinks=False),s):
+     raise Denied('staging entry identity changed')
+   if 'data' in artifacts:os.unlink('data',dir_fd=directory)
+   os.unlink('identity.json',dir_fd=directory)
+   # Recheck the parent binding after unlinking children, with the private
+   # directory descriptor and flock still held.
+   if not os.path.samestat(os.stat(name,dir_fd=parent,follow_symlinks=False),ds):
+    raise Denied('staging directory identity changed')
+   os.rmdir(name,dir_fd=parent);os.fsync(parent)
+  return {'bytes':total,'reclaimedBytes':total if collect else 0,
+          'retainedBytes':0 if collect else total,'collected':collect}
+ finally:os.close(directory)
+
 def handle(req,input_stream=None,output_stream=None):
  input_stream=input_stream or sys.stdin.buffer;output_stream=output_stream or sys.stdout.buffer
  op=req.get('operation');root=valid_path(req['root']);target=valid_path(req['path']);blocked=[valid_path(x) for x in req.get('blockedPaths',[])]
@@ -193,6 +272,7 @@ def handle(req,input_stream=None,output_stream=None):
        visited+=1
        if visited>max_entries*4:raise Denied('manifest directory limit exceeded')
        child=os.path.join(rel,entry.name);full=os.path.join(root,child)
+       if protected(full,blocked):raise Denied('manifest contains protected path')
        if re.fullmatch(r'\.ssh-transfer-[a-f0-9]{64}',entry.name):
         # Reserved private transport state is not artifact tree content. Still
         # reject a link or unsafe directory pretending to be that namespace.
@@ -202,7 +282,6 @@ def handle(req,input_stream=None,output_stream=None):
          if info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o700:raise Denied('unsafe reserved transfer directory')
         finally:os.close(reserved)
         continue
-       if protected(full,blocked):raise Denied('manifest contains protected path')
        info=entry.stat(follow_symlinks=False)
        if stat.S_ISDIR(info.st_mode):walk(child,depth+1)
        else:
@@ -235,13 +314,18 @@ def handle(req,input_stream=None,output_stream=None):
     if metadata(regular(fd))!={k:v for k,v in snap.items() if k!='sha256'}:raise Denied('source changed during read')
     return None
    finally:os.close(fd)
-  if op not in ('stage','write','commit','cleanup'):raise Denied('unknown transfer operation')
+  if op not in ('stage','write','commit','cleanup','storage','collect'):raise Denied('unknown transfer operation')
+  stage_name=checked_stage_name(req,target,root,blocked)
   bounded(req);parentpath,name=os.path.split(relative);parent=openat2(rootfd,parentpath or '.',os.O_RDONLY|os.O_DIRECTORY)
   try:
-   if op in ('stage','commit','cleanup'):
-    receipt=committed_receipt(parent,req,cleanup=op=='cleanup')
+   if op in ('storage','collect','cleanup'):
+    result=private_storage(parent,req,stage_name,op!='storage')
+    if op=='cleanup':result['cleaned']=result['collected']
+    return result
+   if op in ('stage','commit'):
+    receipt=committed_receipt(parent,req,stage_name)
     if receipt:return receipt
-   directory,fd,stage=stage_open(parent,req,create=op=='stage')
+   directory,fd,stage=stage_open(parent,req,stage_name,create=op=='stage')
    try:
     size=regular(fd).st_size
     if op=='stage':return {'offset':size,'prefixSha256':digest(fd),'partialIdentity':identity(regular(fd))}
@@ -262,7 +346,6 @@ def handle(req,input_stream=None,output_stream=None):
      if identity(os.stat('data',dir_fd=directory,follow_symlinks=False))!=identity(regular(fd)):raise Denied('staging path changed')
      rename_noreplace(directory,'data',parent,name);os.fsync(parent)
      os.fsync(directory);return {'committed':True}
-    os.unlink('data',dir_fd=directory);os.unlink('identity.json',dir_fd=directory);os.rmdir(stage,dir_fd=parent);return {'cleaned':True}
    finally:os.close(fd);os.close(directory)
   finally:os.close(parent)
  finally:os.close(rootfd)

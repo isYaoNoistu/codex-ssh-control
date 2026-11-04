@@ -47,11 +47,16 @@ def directory(parent, name, create=False):
 
 
 def open_file(fd, name, flags=os.O_RDONLY):
-    result = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=fd)
-    try: return checked(result)
-    except BaseException:
-        os.close(result)
-        raise
+    for attempt in range(3):
+        result = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=fd)
+        try: return checked(result)
+        except BaseException:
+            # The supervisor atomically replaces JSON snapshots. If our old
+            # descriptor lost its sole link before validation, reopen the name.
+            # A still-linked hardlink or insecure owner/mode always fails.
+            retry = flags == os.O_RDONLY and attempt < 2 and os.fstat(result).st_nlink == 0
+            os.close(result)
+            if not retry: raise
 
 
 def read_json(fd, name):
@@ -134,6 +139,8 @@ def supervise(fd, spec):
     child=None
     try:
         detached(fd)
+        # A collector must never remove a file while its supervisor can still write.
+        fcntl.flock(fd, fcntl.LOCK_SH)
         atomic(fd,'supervisor.json',proc_identity(os.getpid()))
         logfd=open_file(fd,'output',os.O_WRONLY|os.O_CREAT|os.O_EXCL)
         output_read, output_write=os.pipe()
@@ -229,7 +236,7 @@ def snapshot(fd):
         if supervisor and proc_identity(supervisor['pid'])!=supervisor:
             state.update(status='unknown',terminationReason='supervisor_lost')
     state.pop('process',None)
-    state['cancelRequested']=cancelled_before_submit or read_json(fd,'cancel.json') is not None
+    state['cancelRequested']=cancelled_before_submit or state.get('cancelRequested',False) or read_json(fd,'cancel.json') is not None
     try:
         with os.fdopen(open_file(fd,'output'),'rb') as stream: data=stream.read(1048577)
         if len(data)>1048576: raise ValueError('Log exceeds limit')
@@ -239,26 +246,91 @@ def snapshot(fd):
     return state
 
 
+def supervisor_alive(identity):
+    if not identity or proc_identity(identity['pid']) != identity:
+        return False
+    try:
+        with open('/proc/%d/stat' % identity['pid']) as stream:
+            raw = stream.read()
+        return raw[raw.rfind(')') + 2:].split()[0] != 'Z'
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+
+
+def private_storage(fd, identity, collect, expected_status):
+    known = {'identity.json', 'state.json', 'lock', 'output', 'supervisor.json', 'cancel.json'}
+    removable = ('output', 'cancel.json', 'supervisor.json')
+    if collect:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        before_submit = identity.get('cancelledBeforeSubmit') is True
+        state = read_json(fd, 'state.json') or {}
+        status = 'cancelled' if before_submit else state.get('status')
+        if status != expected_status or status not in ('completed', 'cancelled', 'failed'):
+            raise ValueError('Remote task terminal state not confirmed')
+        if not before_submit:
+            reason = state.get('terminationReason')
+            waited = type(state.get('exitCode')) is int or type(state.get('signal')) is int
+            if not waited or reason not in ('exit', 'cancel_requested'):
+                raise ValueError('Remote task exit not verified')
+        # Pre-upgrade supervisors do not hold the directory flock.
+        if supervisor_alive(read_json(fd, 'supervisor.json')):
+            raise ValueError('Task supervisor still active')
+    files = {}
+    for name in os.listdir(fd):
+        if name not in known:
+            raise ValueError('Unexpected private state entry; retaining state')
+        handle = open_file(fd, name)
+        try: files[name] = os.fstat(handle)
+        finally: os.close(handle)
+    total = sum(info.st_size for info in files.values())
+    reclaimed = 0
+    if collect:
+        # Keep identity, lock and terminal state. A delayed submit/cancel,
+        # including one from an older client, must never recreate this job.
+        for name in removable:
+            if name not in files:
+                continue
+            if not os.path.samestat(files[name], os.stat(name, dir_fd=fd, follow_symlinks=False)):
+                raise ValueError('Private state entry changed')
+            os.unlink(name, dir_fd=fd)
+            reclaimed += files[name].st_size
+        os.fsync(fd)
+    return {'bytes': total, 'reclaimedBytes': reclaimed, 'retainedBytes': total - reclaimed,
+            'collected': collect}
+
+
 def control(payload):
     if not sys.platform.startswith('linux'): raise ValueError('Linux is required')
-    if set(payload)-{'action','id','token','spec'}: raise ValueError('Unsupported request fields')
+    if set(payload)-{'action','id','token','spec','expectedStatus'}: raise ValueError('Unsupported request fields')
     action=payload.get('action');task=payload.get('id');token=payload.get('token')
-    if action not in ('submit','read','cancel') or not isinstance(task,str) or not re.fullmatch('[a-f0-9]{32}',task) or not isinstance(token,str) or not re.fullmatch('[a-f0-9]{64}',token): raise ValueError('Invalid task identity')
+    maintenance = action in ('storage', 'collect')
+    if (not maintenance and action not in ('submit','read','cancel')) or not isinstance(task,str) or not re.fullmatch('[a-f0-9]{32}',task) or not isinstance(token,str) or not re.fullmatch('[a-f0-9]{64}',token): raise ValueError('Invalid task identity')
     spec=spec_valid(payload.get('spec')) if action=='submit' else None
     root=None;fd=None;lock=None
     try:
         # /tmp is OS-owned; uid-specific directory is never followed through a link.
         tmp=os.open('/tmp',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
         create=action in ('submit','cancel')
-        try: root=directory(tmp,'codex-ssh-tasks-'+str(os.getuid()),create)
+        try:
+            try:
+                root=directory(tmp,'codex-ssh-tasks-'+str(os.getuid()),create)
+                fd=directory(root,task,create)
+            except FileNotFoundError:
+                if maintenance:
+                    if action == 'collect':
+                        raise ValueError('Task private state missing; ownership and terminal outcome cannot be verified')
+                    return {'missing': True, 'bytes': 0, 'reclaimedBytes': 0, 'retainedBytes': 0,
+                            'collected': False}
+                raise
         finally: os.close(tmp)
-        fd=directory(root,task,create)
         lock=open_file(fd,'lock',os.O_RDWR|(os.O_CREAT if create else 0))
-        fcntl.flock(lock,fcntl.LOCK_EX)
+        fcntl.flock(lock, fcntl.LOCK_EX | (fcntl.LOCK_NB if maintenance else 0))
         identity=read_json(fd,'identity.json')
         token_hash=hashlib.sha256(token.encode()).hexdigest()
         if identity:
             if not hmac.compare_digest(identity['tokenHash'],token_hash): raise ValueError('Task token mismatch')
+            if maintenance:
+                return private_storage(fd, identity, action == 'collect', payload.get('expectedStatus'))
             if identity.get('cancelledBeforeSubmit') is True: return snapshot(fd)
             if spec is not None and identity['specHash']!=digest(spec): raise ValueError('Task immutable spec mismatch')
         elif action=='cancel':
@@ -278,6 +350,8 @@ def control(payload):
             atomic(fd,'cancel.json',{'requestedAt':time.time()})
         return snapshot(fd)
     except FileNotFoundError:
+        if maintenance:
+            raise ValueError('Incomplete private state; retaining task')
         if action!='submit': return {'status':'missing','exitCode':None,'log':'','capabilities':CAPABILITIES}
         raise
     finally:

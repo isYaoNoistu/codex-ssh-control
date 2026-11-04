@@ -635,6 +635,23 @@ test('policy form saves editable directory and command rows with revision and no
   assert.equal(h.ids.get('policy-editor').hidden, false);
 });
 
+test('god mode activation requires a fresh acknowledgement for the selected host and revision', async () => {
+  const h=await harness(initial(),governanceReply);
+  await h.findAction('policy','prod').click(); await h.settle();
+  const mode=h.ids.get('policy-mode'),ack=h.ids.get('god-ack');
+  mode.value='god'; mode.onchange();
+  assert.equal(h.ids.get('god-warning').hidden,false);
+  assert.match(h.ids.get('god-target').textContent,/prod/);
+  const submit=()=>h.ids.get('policy-form').onsubmit({preventDefault(){}});
+  await submit();
+  assert.equal(h.calls.some(c=>c.name==='ssh_policy_save'),false);
+  ack.checked=true;
+  mode.value='readonly'; mode.onchange();
+  assert.equal(ack.checked,false);
+  mode.value='god'; mode.onchange(); ack.checked=true; await submit();
+  assert.deepEqual(h.calls.find(c=>c.name==='ssh_policy_save').arguments.godAck,{hostId:'prod',expectedRevision:3,confirmed:true});
+});
+
 test('policy conflict preserves form values and automatic refresh does not replace the draft', async () => {
   const h = await harness(initial(), (call, state) => call.name === 'ssh_policy_save'
     ? { isError: true, content: [{ type: 'text', text: '策略版本已变化，请重新载入。' }] } : governanceReply(call, state));
@@ -903,9 +920,37 @@ test('sidebar has no approval queue or manual-retry tools and native decline is 
 const historyItem = (id, overrides = {}) => ({ id, operationId: 'op-' + id, threadId: 'original-chat', hostId: 'prod', summary: '重启应用服务', explanation: '使新的应用配置生效', status: 'completed', startedAt: 1770000000000, finishedAt: 1770000001000, exitCode: 0, completionKnown: true, truncated: false, redacted: false, outputNotice: '', ...overrides });
 const historyDetail = (id, overrides = {}) => ({ ...historyItem(id), hostSnapshot: { id: 'prod', name: '生产主机', hostname: 'prod.example.invalid', username: 'deploy', port: 22 }, operationSnapshot: { kind: 'command', command: 'systemctl restart app' }, requestedCommand: 'systemctl restart app', command: '/usr/bin/systemctl restart app', cwd: '/', stdout: '<script>output as text</script>', stderr: '', policyRevision: 3, ...overrides });
 
+async function openHostHistory(h, id='prod') {
+  await h.ids.get('tab-history').click(); await h.settle();
+  await findData(h.ids.get('history-hosts'), 'historyHost', id).click(); await h.settle();
+}
+
+test('history opens on all configured hosts and filters proposals by time and session without reading stdout', async () => {
+  const h=await harness(initial({hosts:[host('prod'),host('offline',{enabled:false})]}),(call,state)=>{
+    if(call.name==='ssh_history_list') return {content:[],structuredContent:{state,items:[historyItem(5,{status:'not_approved',sessionId:'session-77'})],nextCursor:null}};
+    if(call.name==='ssh_history_get') return {content:[],structuredContent:{state,entry:historyDetail(5,{status:'not_approved',sessionId:'session-77',exitCode:null,stdout:null,stderr:null})}};
+  });
+  await h.ids.get('tab-history').click(); await h.settle();
+  assert.equal(h.ids.get('history-hosts').children.length,2);
+  assert.equal(h.calls.some(c=>c.name==='ssh_history_list'),false);
+  await findData(h.ids.get('history-hosts'),'historyHost','prod').click();await h.settle();
+  h.ids.get('history-from').value='2026-11-03';h.ids.get('history-to').value='2026-11-03';
+  h.ids.get('history-session').value='session-77';await h.ids.get('history-session').onchange();await h.settle();
+  const args=h.calls.filter(c=>c.name==='ssh_history_list').at(-1).arguments;
+  assert.equal(args.hostId,'prod');assert.equal(args.sessionId,'session-77');
+  assert.equal(args.fromMs,new Date(2026,10,3).getTime());assert.equal(args.toMs,new Date(2026,10,4).getTime());
+  assert.match(h.ids.get('history-list').textContent,/未通过审批/);
+  await findData(h.ids.get('history-list'),'historyId','5').click();await h.settle();
+  assert.match(h.ids.get('history-detail-content').textContent,/拟执行命令/);
+  assert.doesNotMatch(h.ids.get('history-detail-content').textContent,/实际执行命令|诊断输出/);
+  await h.ids.get('history-back').click();
+  await h.ids.get('history-host-back').click();
+  assert.equal(h.ids.get('history-hosts-view').hidden,false);
+});
+
 test('execution history lists and paginates without fetching bodies or executing commands', async () => {
   const h = await harness(initial(), (call, state) => call.name === 'ssh_history_list' ? { content: [], structuredContent: { state, items: [historyItem(call.arguments.beforeId ? 1 : 2)], nextCursor: call.arguments.beforeId ? null : 2 } } : undefined);
-  await h.ids.get('tab-history').click(); await h.settle();
+  await openHostHistory(h);
   assert.match(h.ids.get('history-list').textContent, /使新的应用配置生效/);
   assert.equal(h.calls.some(call => call.name === 'ssh_history_get'), false);
   await h.ids.get('history-more').click(); await h.settle();
@@ -924,7 +969,7 @@ test('history detail shows purpose before exact commands and output strictly as 
     if (call.name === 'ssh_history_list') return { content: [], structuredContent: { state, items: [historyItem(2)], nextCursor: null } };
     if (call.name === 'ssh_history_get') return { content: [], structuredContent: { state, entry } };
   });
-  await h.ids.get('tab-history').click(); await h.settle();
+  await openHostHistory(h);
   await findData(h.ids.get('history-list'), 'historyId', '2').click(); await h.settle();
   assert.deepEqual(h.calls.find(call => call.name === 'ssh_history_get').arguments, { historyId: 2, uiToken: '__SSH_UI_TOKEN__' });
   assert.equal(h.ids.get('history-list-view').hidden, true);
@@ -942,7 +987,7 @@ test('redacted and unknown history state never presents hidden output or invente
     if (call.name === 'ssh_history_list') return { content: [], structuredContent: { state, items: [historyItem(3)], nextCursor: null } };
     if (call.name === 'ssh_history_get') return { content: [], structuredContent: { state, entry: historyDetail(3, { status: 'unknown', completionKnown: false, redacted: true, stdout: 'must-not-render', stderr: 'must-not-render', outputNotice: '敏感输出已隐藏。' }) } };
   });
-  await h.ids.get('tab-history').click(); await h.settle(); await findData(h.ids.get('history-list'), 'historyId', '3').click(); await h.settle();
+  await openHostHistory(h); await findData(h.ids.get('history-list'), 'historyId', '3').click(); await h.settle();
   const detail = h.ids.get('history-detail-content').textContent;
   assert.match(detail, /状态未知/); assert.match(detail, /敏感输出已隐藏/);
   assert.doesNotMatch(detail, /must-not-render|执行已完成/);
@@ -954,11 +999,11 @@ test('running history detail refreshes while visible and stops after final compl
     if (call.name === 'ssh_history_list') return { content: [], structuredContent: { state, items: [historyItem(4, { status: 'running' })], nextCursor: null } };
     if (call.name === 'ssh_history_get') return { content: [], structuredContent: { state, entry: historyDetail(4, ++reads === 1 ? { status: 'running', finishedAt: null, stdout: '', completionKnown: false } : {}) } };
   });
-  await h.ids.get('tab-history').click(); await h.settle(); await findData(h.ids.get('history-list'), 'historyId', '4').click(); await h.settle();
+  await openHostHistory(h); await findData(h.ids.get('history-list'), 'historyId', '4').click(); await h.settle();
   assert.match(h.ids.get('history-detail-content').textContent, /执行中/);
   h.document.hidden = true; h.intervals[0](); await h.settle(); assert.equal(reads, 1);
   h.document.hidden = false; h.intervals[0](); await h.settle();
-  assert.equal(reads, 2); assert.match(h.ids.get('history-detail-content').textContent, /已完成/);
+  assert.equal(reads, 2); assert.match(h.ids.get('history-detail-content').textContent, /成功/);
   h.intervals[0](); await h.settle(); assert.equal(reads, 2);
 });
 
@@ -970,7 +1015,7 @@ test('a delayed history detail cannot replace a later selection or a different a
       ? new Promise(resolve => { finishOld = () => resolve({ content: [], structuredContent: { state, entry: historyDetail(1, { explanation: 'old result' }) } }); })
       : { content: [], structuredContent: { state, entry: historyDetail(2, { explanation: 'new selected result' }) } };
   });
-  await h.ids.get('tab-history').click(); await h.settle();
+  await openHostHistory(h);
   const old = findData(h.ids.get('history-list'), 'historyId', '1').click(); await h.settle();
   await h.ids.get('history-back').click(); await findData(h.ids.get('history-list'), 'historyId', '2').click(); await h.settle();
   finishOld(); await old; await h.settle();
@@ -995,7 +1040,7 @@ test('completed history content is not rebuilt by periodic status refresh while 
     if (call.name === 'ssh_history_list') return { content: [], structuredContent: { state, items: [historyItem(8)], nextCursor: null } };
     if (call.name === 'ssh_history_get') return { content: [], structuredContent: { state, entry: historyDetail(8) } };
   });
-  await h.ids.get('tab-history').click(); await h.settle(); await findData(h.ids.get('history-list'), 'historyId', '8').click(); await h.settle();
+  await openHostHistory(h); await findData(h.ids.get('history-list'), 'historyId', '8').click(); await h.settle();
   const original = h.ids.get('history-detail-content').children[0];
   h.intervals[0](); await h.settle();
   assert.equal(h.ids.get('history-detail-content').children[0], original);
@@ -1017,7 +1062,7 @@ test('structured file history shows path and digest without exposing a file body
     if (call.name === 'ssh_history_list') return { content: [], structuredContent: { state, items: [historyItem(9)], nextCursor: null } };
     if (call.name === 'ssh_history_get') return { content: [], structuredContent: { state, entry: historyDetail(9, { requestedCommand: '', command: '', operationSnapshot: { kind: 'write', path: '/srv/app/a.txt', bytes: 12, sha256: 'abcdef1234', content: 'must-not-show-file-body' }, stdout: '', stderr: '', outputNotice: '文件正文未写入执行历史。' }) } };
   });
-  await h.ids.get('tab-history').click(); await h.settle(); await findData(h.ids.get('history-list'), 'historyId', '9').click(); await h.settle();
+  await openHostHistory(h); await findData(h.ids.get('history-list'), 'historyId', '9').click(); await h.settle();
   const detail = h.ids.get('history-detail-content').textContent;
   assert.match(detail, /写入文件/); assert.ok(detail.includes('/srv/app/a.txt')); assert.ok(detail.includes('abcdef1234'));
   assert.doesNotMatch(detail, /must-not-show-file-body/);
@@ -1038,7 +1083,7 @@ for (const scenario of [
       if (call.name === 'ssh_history_list') return { content: [], structuredContent: { state, items: [historyItem(11)], nextCursor: null } };
       if (call.name === 'ssh_history_get') return { content: [], structuredContent: { state, entry } };
     });
-    await h.ids.get('tab-history').click(); await h.settle();
+    await openHostHistory(h);
     await findData(h.ids.get('history-list'), 'historyId', '11').click(); await h.settle();
     const detail = h.ids.get('history-detail-content');
     const diagnostic = detail.children.find(section => section.children?.[0]?.textContent === '诊断输出（stderr）');

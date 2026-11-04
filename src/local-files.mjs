@@ -90,7 +90,35 @@ export async function commitLocalPartial(partial,target,root,snapshot,beforePubl
  await beforePublish();await fs.link(partial.path,target);await fs.unlink(partial.path);await fs.rmdir(partial.directory);
  return {committed:true};
 }
-export async function cleanupLocalPartial(partial,target,root){await checkPartial(partial,target,root);await fs.unlink(partial.path);await fs.rmdir(partial.directory);}
+export async function cleanupLocalPartial(partial,target,root,beforeRemove=()=>{}){
+ if(!TOKEN.test(partial.token)||partial.directory!==path.join(path.dirname(target),'.ssh-transfer-'+partial.token)||partial.path!==path.join(partial.directory,'data'))throw Error('partial identity mismatch');
+ const authorize=()=>{
+  const policy=beforeRemove();
+  if(policy?.then)throw Error('partial permission validation must be synchronous');
+  if((policy?.localBlockedPaths??[]).some(p=>[target,partial.path,partial.directory].some(value=>inside(value,path.resolve(p)))))throw Error('protected local partial path');
+ };
+ authorize();
+ const verifyDirectory=async()=>{
+  await validateLocalPath(partial.directory,root,{allowMissing:true,directory:true});
+  const stat=await fs.lstat(partial.directory,{bigint:true});
+  if(!stat.isDirectory()||String(stat.dev)!==partial.directoryDev||String(stat.ino)!==partial.directoryIno)throw Error('partial directory identity mismatch');
+ };
+ await verifyDirectory();
+ const names=await fs.readdir(partial.directory);
+ if(names.some(name=>name!=='data'))throw Error('unexpected files in private transfer directory');
+ if(names.includes('data')){
+  await checkPartial(partial,target,root);
+  authorize();await fs.unlink(partial.path);
+ }else{
+   await validateLocalPath(target,root,{allowMissing:true});
+   let final;
+   try{final=await fs.lstat(target,{bigint:true});}catch(error){if(error.code!=='ENOENT')throw error;}
+   if(final&&String(final.dev)===partial.dev&&String(final.ino)===partial.ino)throw Error('possible unknown publication; retaining private state');
+ }
+ // Recover a cleanup interrupted between unlink and rmdir, only when the
+ // remaining directory is still the exact recorded inode.
+ await verifyDirectory();authorize();await fs.rmdir(partial.directory);
+}
 export async function recoverLocalPublication(partial,target,root,snapshot){
  await validateLocalPath(target,root,{allowMissing:true});let info;try{info=await fs.lstat(target,{bigint:true});}catch(e){if(e.code==='ENOENT')return false;throw e;}
  if(!info.isFile()||String(info.dev)!==partial.dev||String(info.ino)!==partial.ino||![1n,2n].includes(info.nlink))throw new Error('publication target identity mismatch');

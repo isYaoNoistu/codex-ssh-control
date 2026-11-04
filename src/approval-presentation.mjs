@@ -64,10 +64,20 @@ export function operationApprovalRequest(approval) {
 }
 
 export function accessApprovalRequest(preview) {
+ const elevated=preview.filter(item=>item.mode==='god');
  return form([
   {label:'授权目的',value:'允许当前聊天限时访问下列 SSH 主机。'},
   {label:'目标主机',value:preview.map(({host,grantMinutes})=>target(host)+'\n授权时长：最长 '+grantMinutes+' 分钟').join('\n\n')},
-  {label:'操作权限',value:'各主机仍按现有权限策略执行；修改操作仍需逐次审批。此次授权不执行远程命令。'},
+  {label:'操作权限',value:elevated.length?'以下主机已启用完全控制模式：'+elevated.map(({host})=>host.id).join('、')+'。授权后可以使用 SSH 账号权限读取敏感资源、修改或删除文件并执行任意 Shell，无需逐次确认。其他主机依各自策略执行。':'只读主机禁止修改；其他主机按各自策略执行，修改操作仍需逐次审批。此次授权不执行远程命令。'},
   {label:'本次确认',value:'仅授权当前聊天；授权到期需要重新确认。关闭详情仅收起；点“取消”不授权。'},
- ],{title:'确认主机授权',triggerLabel:'查看并授权主机',confirmLabel:'授权此聊天',destructive:false,sectionTitles:['授权范围','授权规则']});
+ ],{title:'确认主机授权',triggerLabel:'查看并授权主机',confirmLabel:'授权此聊天',destructive:elevated.length>0,sectionTitles:['授权范围','授权规则']});
+}
+
+export function godActivationRequest({host,policyRevision}) {
+ return form([
+  {label:'权限变更',value:'为此主机开启上帝模式（完全控制）。'},
+  {label:'目标主机',value:target(host)+'\n当前策略版本：'+policyRevision},
+  {label:'授权影响',value:'获得本主机授权的聊天可以直接运行任意 Shell，包括读取密钥和凭据、停止服务、删除文件。远端权限上限是配置的 SSH 账号。命令不再逐次询问，远端路径限制、命令禁令和固定操作名称限制不约束原始 Shell。'},
+  {label:'生效范围',value:'保存时撤销旧授权并使未完成确认失效。之后每个聊天仍需获得限时授权；SSH 身份验证、审计和本地制品目录限制继续生效。'},
+ ],{title:'确认开启上帝模式',triggerLabel:'查看完整授权并确认',confirmLabel:'开启上帝模式',destructive:true,sectionTitles:['主机与范围','完全控制权限']});
 }

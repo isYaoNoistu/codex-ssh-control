@@ -6,6 +6,8 @@ import {buildRemoteCapabilityProbe,parseRemoteCapabilities,getLocalCapabilities,
 import {runControlProcess} from './control-process.mjs';
 import {JobService} from './job-service.mjs';
 import {TransferService} from './transfer-service.mjs';
+import {LifecycleService} from './lifecycle.mjs';
+import {inspectJobPrivate,inspectTransferPrivate} from './remote-lifecycle.mjs';
 import {normalizeOperation,evaluateOperation} from './policy.mjs';
 
 const terminal=new Set(['completed','failed','cancelled','timed_out']);
@@ -44,6 +46,9 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
     const {hostId,...operation}=p;
     return normalizeOperation({...operation,kind:'transfer',planId:record.transferId});
   }
+  function transferScope(record) {
+    return normalizeOperation({kind:'transfer_inspect',direction:record.direction,localPath:record.localPath,remotePath:record.remotePath,recursive:false});
+  }
   async function authorize(stage,record) {
     const ticket=current(record.host);if(record.threadId!==ticket.ctx.threadId)throw new Error('任务不属于当前聊天');
     const op=ticket.permit.evaluation.operation;
@@ -65,7 +70,7 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
       if(op.kind!=='transfer_inspect')throw new Error('缺少传输路径检查许可');
       if(op.direction!==record.direction||op.localPath.replaceAll('\\','/')!==record.localPath.replaceAll('\\','/')||op.remotePath!==record.remotePath)throw new Error('路径检查请求不一致');
     } else if(stage==='cleanup') {
-      if(op.kind!=='transfer_control'||op.action!=='cleanup'||op.id!==record.transferId)throw new Error('缺少临时文件清理批准');
+      if(op.kind!=='transfer_control'||op.action!=='cleanup'||op.id!==record.transferId||stable(op.transfer)!==stable(transferScope(record)))throw new Error('缺少对应传输路径的临时文件清理批准');
     } else if(stage==='mkdir') {
       const {hostId,...payload}=record.approvalPayload;
       if(op.kind!=='transfer_mkdir'||stable(op)!==stable(normalizeOperation(payload)))throw new Error('创建目录与已批准内容不一致');
@@ -93,6 +98,34 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
   }
   const jobs=new JobService({dataDir,execute,authorize,beforeDispatch:r=>beforeDispatch('job',r),onUpdate:onJobUpdate});
   const transfers=new TransferService({dataDir,spawnRemote,authorize,beforeDispatch:r=>beforeDispatch('transfer',r),validateLease:()=>current()});
+  function checkedLifecycleRecord(record,kind,collect){
+    const ticket=current(record.host);
+    if(kind!=='transfer'||!collect)return record;
+    const {policy}=store.getPolicy(ticket.permit.host.id);
+    const rights=evaluateOperation(policy,transferScope(record));
+    if(rights.decision==='deny'||!rights.transfer||rights.transfer.localRoot!==record.localRoot||rights.transfer.remoteRoot!==record.remoteRoot)
+      throw new Error('当前目录授权不再覆盖此传输，无法回收临时文件。');
+    return {...record,blockedPaths:[...new Set([...record.blockedPaths??[],...rights.transfer.blockedPaths])],
+      localBlockedPaths:[...new Set([...record.localBlockedPaths??[],...rights.transfer.localBlockedPaths])]};
+  }
+  const lifecycle=new LifecycleService({dataDir,jobs,transfers});
+  let sweepInFlight=null, lastSweepError='';
+  function sweepLocal(){
+    if(!sweepInFlight) sweepInFlight=Promise.resolve().then(()=>lifecycle.sweep()).then(result=>{
+      lastSweepError='';
+      return result;
+    },error=>{
+      lastSweepError=error.message;
+      throw error;
+    }).finally(()=>{sweepInFlight=null;});
+    return sweepInFlight;
+  }
+  function scheduledSweep(){
+    if(!closing) sweepLocal().catch(()=>process.stderr.write('Local lifecycle sweep incomplete.\n'));
+  }
+  const maintenanceTimer=setInterval(scheduledSweep,60*60*1000);
+  maintenanceTimer.unref();
+  scheduledSweep();
   function onTransferUpdate(record) {
     if(closing)return;
     const tracked=store.getExternalOperation(record.threadId,'transfer',record.transferId);if(!tracked)return;
@@ -120,6 +153,22 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
     const threadId=ctx.threadId;
     if(['ssh_transfer_prepare','ssh_transfer_manifest','ssh_transfer_start','ssh_transfer_resume'].includes(name)&&!getLocalCapabilities().artifactTransfer.supported)throw Object.assign(new Error('当前本机平台不支持受管二进制传输；仅支持 Linux 与 Windows，未启动 SSH。'),{code:'PLATFORM_UNSUPPORTED'});
     switch(name) {
+      case 'ssh_lifecycle_overview':
+        return {overview:await lifecycle.overview(),archive:await lifecycle.listArchives(args),lastSweepError};
+      case 'ssh_lifecycle_configure':
+        return {settings:await lifecycle.configure({retentionDays:args.retentionDays})};
+      case 'ssh_lifecycle_sweep':
+        return {sweep:await sweepLocal()};
+      case 'ssh_lifecycle_inspect':case 'ssh_lifecycle_collect': {
+        const collect=name==='ssh_lifecycle_collect';
+        const operation={kind:'lifecycle',resource:args.kind,id:args.id,action:collect?'collect':'inspect'};
+        return permitted(ctx,args,operation,signal,async()=>({
+          measurement:await lifecycle.remote({kind:args.kind,id:args.id,threadId,hostId:args.hostId,collect},async record=>{
+            const checked=checkedLifecycleRecord(record,args.kind,collect);
+            return args.kind==='job'?inspectJobPrivate(jobs,checked,collect):inspectTransferPrivate(transfers,checked,collect);
+          },record=>checkedLifecycleRecord(record,args.kind,collect)),
+        }));
+      }
       case 'ssh_host_key_scan': {
         const host=findHost(args.hostId),index=args.hopIndex??-1,target=index<0?host:host.connection?.jumpHosts?.[index];
         if(!target?.hostname)throw new Error('请先保存明确的主机地址；SSH别名请在可信本地配置中核验指纹');
@@ -146,7 +195,7 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
         if(!op.cwd)op.cwd='/';
         return permitted(ctx,args,op,signal,async p=>{
           const {kind,idempotencyKey,...operation}=p.evaluation.operation;
-          const job=await jobs.submit({threadId,host:p.host,operation:{...operation,command:p.evaluation.command},idempotencyKey});
+          const job=await jobs.submit({threadId,sessionId:ctx.sessionId,host:p.host,operation:{...operation,command:p.evaluation.command},idempotencyKey});
           const tracked=store.getExternalOperation(threadId,'job',job.id);
           if(!tracked||tracked.id!==p.operationId)finish(p.operationId,{status:'completed',exitCode:0,stdout:'相同提交已存在，返回原任务；未重复执行。'});
           return {job:publicJob(job)};
@@ -178,7 +227,7 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
       case 'ssh_transfer_start': {
         const id=args.planId??args.transferId,record=await transfers.read({threadId,transferId:id}),op=transferOperation(record);
         return permitted(ctx,{...args,hostId:record.hostId??record.approvalPayload.hostId},op,signal,async()=>{
-          const transfer=await transfers.start({threadId,planId:id});followTransfer(transfer);
+          const transfer=await transfers.start({threadId,sessionId:ctx.sessionId,planId:id});followTransfer(transfer);
           return {transfer:publicTransfer(transfer)};
         },{durable:true});
       }
@@ -209,8 +258,12 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
       }
       case 'ssh_transfer_cancel':case 'ssh_transfer_cleanup': {
         const record=await transfers.read({threadId,transferId:args.transferId});
-        return permitted(ctx,{...args,hostId:record.hostId??record.approvalPayload.hostId},{kind:'transfer_control',id:args.transferId,action:name==='ssh_transfer_cleanup'?'cleanup':'cancel'},signal,async()=>{
-          const transfer=name==='ssh_transfer_cleanup'?await transfers.cleanup({threadId,transferId:args.transferId}):await transfers.cancel({threadId,transferId:args.transferId});onTransferUpdate(transfer);return {transfer:publicTransfer(transfer)};
+        const cleanup=name==='ssh_transfer_cleanup';
+        const operation={kind:'transfer_control',id:args.transferId,action:cleanup?'cleanup':'cancel',...(cleanup?{transfer:transferScope(record)}:{})};
+        return permitted(ctx,{...args,hostId:record.hostId??record.approvalPayload.hostId},operation,signal,async()=>{
+          const identity={threadId,transferId:args.transferId};
+          const transfer=cleanup?await transfers.cleanup(identity,r=>checkedLifecycleRecord(r,'transfer',true)):await transfers.cancel(identity);
+          onTransferUpdate(transfer);return {transfer:publicTransfer(transfer)};
         });
       }
       default:throw new Error('未知基础设施操作');
@@ -218,6 +271,6 @@ export function createInfrastructureRuntime({dataDir,store,gate,requireActive,fi
   }
   return {
     call(name,ctx,args,signal){const promise=handle(name,ctx,args,signal);inflight.add(promise);promise.finally(()=>inflight.delete(promise)).catch(()=>{});return promise;},
-    async close(){closing=true;for(const child of children)child.kill();await Promise.allSettled([...inflight,...[...transfers.running.values()].map(x=>x.promise)]);jobs.close();transfers.close();},
+    async close(){closing=true;clearInterval(maintenanceTimer);for(const child of children)child.kill();await Promise.allSettled([...inflight,sweepInFlight,...[...transfers.running.values()].map(x=>x.promise)]);lifecycle.close();jobs.close();transfers.close();},
   };
 }

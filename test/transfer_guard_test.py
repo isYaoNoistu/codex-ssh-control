@@ -1,5 +1,6 @@
 """Linux temporary-directory tests, never a user host."""
 import importlib.util, pathlib, tempfile, unittest, os, io, hashlib, time, platform
+from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('transfer_guard',pathlib.Path(__file__).resolve().parents[1]/'remote'/'transfer_guard.py')
 g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
 @unittest.skipUnless(platform.system()=='Linux','requires Linux openat2')
@@ -17,7 +18,7 @@ class Transfers(unittest.TestCase):
   self.assertEqual(pathlib.Path(self.req['path']).read_bytes(),b'abc')
   self.assertTrue(self.call('stage')['committed'])
   self.assertEqual([e['relativePath'] for e in self.call('manifest',path=self.root)['entries']],['out'])
-  self.assertTrue(self.call('cleanup')['cleaned'])
+  self.assertTrue(self.call('cleanup',expectedStatus='completed',originalExpiresAt=self.req['expiresAt'])['cleaned'])
  def test_existing_target_is_never_replaced(self):
   self.call('stage');self.call('write',offset=0,prefixSha256=hashlib.sha256(b'').hexdigest(),data=b'abc')
   pathlib.Path(self.req['path']).write_text('keep')
@@ -28,6 +29,95 @@ class Transfers(unittest.TestCase):
   with self.assertRaises(g.Denied):self.call('commit',expiresAt=0)
   with self.assertRaises((g.Denied,OSError)):self.call('commit',token='b'*64)
   self.assertFalse(os.path.exists(self.req['path']))
+ def test_collect_committed_receipt_preserves_published_file_and_verifies_identity(self):
+  self.call('stage')
+  self.call('write',offset=0,prefixSha256=hashlib.sha256(b'').hexdigest(),data=b'abc')
+  args={'expectedStatus':'completed','originalExpiresAt':time.time()*1000-100}
+  published=pathlib.Path(self.req['path'])
+  # Arrange the post-publication inode/receipt independently of the upload
+  # implementation. The normal commit path has a separate end-to-end test.
+  stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token'])
+  os.rename(stage/'data',published)
+  before=published.stat()
+  with self.assertRaises(g.Denied):self.call('collect',**{**args,'expectedStatus':'commit_unknown'})
+  with self.assertRaises(g.Denied):self.call('collect',**{**args,'originalExpiresAt':self.req['expiresAt']})
+  before_bytes=self.call('storage',**args)['bytes']
+  result=self.call('collect',**args);self.assertEqual(result['reclaimedBytes'],before_bytes)
+  self.assertEqual(result['retainedBytes'],0)
+  self.assertTrue(os.path.samestat(before,published.stat()));self.assertEqual(published.read_bytes(),b'abc')
+  self.assertTrue(self.call('storage',**args)['missing'])
+  for op in ('collect','cleanup'):
+   with self.assertRaisesRegex(g.Denied,'missing'):
+    self.call(op,**args)
+ def test_collect_cancelled_partial_refuses_lock_replacement_and_extra_entries(self):
+  self.call('stage');self.call('write',offset=0,prefixSha256=hashlib.sha256(b'').hexdigest(),data=b'ab')
+  stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token'])
+  args={'expectedStatus':'cancelled','originalExpiresAt':time.time()*1000-100}
+  lock=os.open(stage,os.O_RDONLY|os.O_DIRECTORY)
+  try:
+   g.fcntl.flock(lock,g.fcntl.LOCK_EX)
+   with self.assertRaises(BlockingIOError):self.call('collect',**args)
+  finally:os.close(lock)
+  (stage/'other').write_bytes(b'keep')
+  with self.assertRaises(g.Denied):self.call('collect',**args)
+  self.assertEqual((stage/'data').read_bytes(),b'ab');(stage/'other').unlink()
+  with self.assertRaises(g.Denied):self.call('collect',**{**args,'expectedStatus':'completed'})
+  self.assertGreaterEqual(self.call('collect',**args)['reclaimedBytes'],2);self.assertFalse(stage.exists())
+ def test_collect_rejects_unprovable_publication_and_replaced_partial(self):
+  self.call('stage')
+  stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token']); held=stage/'data'
+  fd=os.open(held,os.O_RDONLY)
+  try:
+   held.unlink();held.write_text('xyz')
+   with self.assertRaises(g.Denied):self.call('collect',expectedStatus='cancelled',originalExpiresAt=1)
+   self.assertEqual(held.read_text(),'xyz')
+  finally:os.close(fd)
+ def test_collect_lost_receipt_cannot_delete_or_accept_an_unrelated_published_inode(self):
+  self.call('stage')
+  stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token'])
+  published=pathlib.Path(self.req['path'])
+  (stage/'data').rename(pathlib.Path(self.root)/'old-inode')
+  published.write_bytes(b'abc')
+  for op in ('collect','cleanup'):
+   with self.assertRaisesRegex(g.Denied,'identity mismatch'):
+    self.call(op,expectedStatus='completed',originalExpiresAt=1)
+  self.assertTrue((stage/'identity.json').exists())
+  self.assertEqual(published.read_bytes(),b'abc')
+ def test_derived_private_path_denials_precede_stats_and_gc(self):
+  self.call('stage');self.call('write',offset=0,prefixSha256=hashlib.sha256(b'').hexdigest(),data=b'abc')
+  stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token'])
+  receipt=stage/'identity.json';data=stage/'data';target=pathlib.Path(self.req['path'])
+  original_receipt=receipt.read_bytes()
+  for published in (False, True):
+   if published:data.rename(target)
+   for blocked in (stage, data, receipt):
+    for op in ('storage','collect','cleanup'):
+     with self.subTest(published=published,blocked=blocked.name,op=op):
+      with self.assertRaisesRegex(g.Denied,'protected'):
+       self.call(op,blockedPaths=[str(blocked)],expectedStatus='completed' if published else 'cancelled',originalExpiresAt=1)
+      self.assertEqual(receipt.read_bytes(),original_receipt)
+      self.assertEqual((target if published else data).read_bytes(),b'abc')
+ def test_denied_private_child_prevents_staging_directory_creation(self):
+  stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token'])
+  with self.assertRaisesRegex(g.Denied,'protected'):
+   self.call('stage',blockedPaths=[str(stage/'data')])
+  self.assertFalse(stage.exists())
+ def test_replaced_directory_after_receipt_removal_is_preserved(self):
+  self.call('stage')
+  stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token'])
+  published=pathlib.Path(self.req['path'])
+  (stage/'data').write_bytes(b'abc')
+  (stage/'data').rename(published)
+  unlink=os.unlink
+  def swap_at_unlink(name,*,dir_fd):
+   unlink(name,dir_fd=dir_fd)
+   if name=='identity.json':
+    stage.rename(stage.with_name('original-staging-directory'))
+    stage.mkdir(mode=0o700)
+  with patch.object(g.os,'unlink',side_effect=swap_at_unlink):
+   with self.assertRaisesRegex(g.Denied,'directory identity changed'):
+    self.call('collect',expectedStatus='completed',originalExpiresAt=1)
+  self.assertTrue(stage.is_dir());self.assertEqual(published.read_bytes(),b'abc')
  def test_rejects_symlinks_hardlinks_and_source_changes(self):
   p=pathlib.Path(self.root)/'source';p.write_bytes(b'abc');os.link(p,self.root+'/hard')
   with self.assertRaises(g.Denied):self.call('inspect',path=str(p))
@@ -41,7 +131,7 @@ class Transfers(unittest.TestCase):
   with self.assertRaises(g.Denied):self.call('commit')
  def test_cleanup_rejects_replaced_partial_and_xattrs(self):
   self.call('stage');stage=pathlib.Path(self.root)/('.ssh-transfer-'+self.req['token']);(stage/'data').rename(stage/'old');(stage/'data').write_bytes(b'abc')
-  with self.assertRaises(g.Denied):self.call('cleanup')
+  with self.assertRaises(g.Denied):self.call('cleanup',expectedStatus='cancelled',originalExpiresAt=1)
   self.assertTrue((stage/'data').exists())
   p=pathlib.Path(self.root)/'source';p.write_bytes(b'abc');os.setxattr(p,'user.test',b'value')
   with self.assertRaises(g.Denied):self.call('inspect',path=str(p))
